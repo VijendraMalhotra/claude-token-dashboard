@@ -1,4 +1,4 @@
-import { api, fmt } from '/web/app.js';
+import { api, apiF, fmt } from '/web/app.js';
 
 export default async function (root) {
   const id = decodeURIComponent(location.hash.split('/')[2] || '');
@@ -7,7 +7,7 @@ export default async function (root) {
 }
 
 async function renderList(root) {
-  const list = await api('/api/sessions?limit=100');
+  const list = await apiF('/api/sessions?limit=100');
   root.innerHTML = `
     <div class="card">
       <h2>Sessions</h2>

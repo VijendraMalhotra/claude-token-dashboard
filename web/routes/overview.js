@@ -1,4 +1,4 @@
-import { api, fmt, state } from '/web/app.js';
+import { apiF, fmt, state } from '/web/app.js';
 import { barChart, donutChart, groupedBarChart, stackedBarChart } from '/web/charts.js';
 
 const RANGES = [
@@ -35,12 +35,12 @@ export default async function (root) {
   const since = sinceIso(range);
 
   const [totals, projects, sessions, tools, daily, byModel] = await Promise.all([
-    api(withSince('/api/overview', since)),
-    api(withSince('/api/projects', since)),
-    api(withSince('/api/sessions?limit=10', since)),
-    api(withSince('/api/tools', since)),
-    api(withSince('/api/daily', since)),
-    api(withSince('/api/by-model', since)),
+    apiF(withSince('/api/overview', since)),
+    apiF(withSince('/api/projects', since)),
+    apiF(withSince('/api/sessions?limit=10', since)),
+    apiF(withSince('/api/tools', since)),
+    apiF(withSince('/api/daily', since)),
+    apiF(withSince('/api/by-model', since)),
   ]);
 
   const cacheCreate =

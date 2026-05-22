@@ -1,4 +1,4 @@
-import { api, fmt } from '/web/app.js';
+import { apiF, fmt } from '/web/app.js';
 
 const SORTS = [
   { key: 'tokens', label: 'Most tokens' },
@@ -19,7 +19,7 @@ function writeSort(key) {
 
 export default async function (root) {
   const sort = readSort();
-  const rows = await api('/api/prompts?limit=100&sort=' + encodeURIComponent(sort.key));
+  const rows = await apiF('/api/prompts?limit=100&sort=' + encodeURIComponent(sort.key));
 
   const sortTabs = `
     <div class="range-tabs" role="tablist">

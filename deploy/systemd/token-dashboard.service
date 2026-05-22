@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude Code Token Dashboard
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/token-dashboard/cli.py dashboard --no-open --projects-dir %h/claude-sessions
+# HOST: bind to the VPS LAN IP so the Mac browser can reach it.
+# Replace with the actual IP from `ip a` — do not use 0.0.0.0.
+Environment=HOST=192.168.1.x
+Environment=PORT=8080
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

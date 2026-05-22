@@ -1,4 +1,4 @@
-import { api, fmt } from '/web/app.js';
+import { apiF, fmt } from '/web/app.js';
 import { barChart } from '/web/charts.js';
 
 const RANGES = [
@@ -29,7 +29,7 @@ export default async function (root) {
   const range = readRange();
   const since = sinceIso(range);
   const url = '/api/skills' + (since ? '?since=' + encodeURIComponent(since) : '');
-  const skills = await api(url);
+  const skills = await apiF(url);
 
   const totalInvocations = skills.reduce((s, r) => s + r.invocations, 0);
   const totalSessions = new Set(); // not exact — we'd need another query; skip.

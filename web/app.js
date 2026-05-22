@@ -29,7 +29,14 @@ export async function api(path, opts) {
   return r.json();
 }
 
-export const state = { plan: 'api', pricing: null };
+export function apiF(path) {
+  const m = state.machine;
+  if (!m || m === 'all') return api(path);
+  const sep = path.includes('?') ? '&' : '?';
+  return api(path + sep + 'machine=' + encodeURIComponent(m));
+}
+
+export const state = { plan: 'api', pricing: null, machine: localStorage.getItem('td.machine') || 'all' };
 
 const ROUTES = {
   '/overview': () => import('/web/routes/overview.js'),
@@ -50,10 +57,23 @@ function buildTopbar() {
       ${Object.keys(ROUTES).map(p => `<a href="#${p}" data-route="${p}">${p.slice(1)}</a>`).join('')}
     </nav>
     <div class="spacer"></div>
+    <select id="machine-filter" title="Filter by source machine" style="font-size:12px;padding:4px 8px">
+      <option value="all">All machines</option>
+      <option value="mac">Mac</option>
+      <option value="vps">VPS</option>
+    </select>
     <span class="pill" id="plan-pill">api</span>
     <span class="pill muted" title="Cmd/Ctrl+B blurs sensitive text">⌘B blur</span>
   `;
   document.body.prepend(wrap);
+
+  const sel = wrap.querySelector('#machine-filter');
+  sel.value = state.machine;
+  sel.addEventListener('change', () => {
+    state.machine = sel.value;
+    localStorage.setItem('td.machine', sel.value);
+    render();
+  });
 }
 
 function setActiveTab(routeKey) {

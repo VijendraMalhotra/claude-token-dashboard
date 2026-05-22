@@ -1,7 +1,7 @@
-import { api, fmt } from '/web/app.js';
+import { apiF, fmt } from '/web/app.js';
 
 export default async function (root) {
-  const rows = await api('/api/projects');
+  const rows = await apiF('/api/projects');
   root.innerHTML = `
     <div class="card">
       <h2>Projects</h2>
