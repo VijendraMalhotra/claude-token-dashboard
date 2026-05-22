@@ -27,8 +27,8 @@ No `pip install`. No Node.js. No build step.
 ## Quickstart
 
 ```bash
-git clone https://github.com/nateherkai/token-dashboard.git
-cd token-dashboard
+git clone https://github.com/VijendraMalhotra/claude-token-dashboard.git
+cd claude-token-dashboard
 python3 cli.py dashboard
 ```
 
@@ -129,6 +129,10 @@ Data flow: `cli.py` → `token_dashboard/scanner.py` → SQLite DB; `token_dashb
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to develop and test
 - [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) — rough edges
 - [`docs/inspiration.md`](docs/inspiration.md) — prior art and how this project diverges
+
+## Attribution
+
+Forked from [nateherkai/token-dashboard](https://github.com/nateherkai/token-dashboard) by Nate Herk. The core scanner, server, and UI architecture are his work. This fork extends it with additional tooling and deployment support.
 
 ## Contributing
 
