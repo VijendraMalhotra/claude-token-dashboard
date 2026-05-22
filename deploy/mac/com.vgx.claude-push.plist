@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.vgx.claude-push</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/vijendra/bin/mac-push.sh</string>
+    </array>
+
+    <!-- Run once at load, then every hour -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/vijendra/Library/Logs/claude-push.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/vijendra/Library/Logs/claude-push.log</string>
+</dict>
+</plist>

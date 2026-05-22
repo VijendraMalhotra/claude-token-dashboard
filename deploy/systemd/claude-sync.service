@@ -1,9 +1,10 @@
 [Unit]
-Description=Sync Claude Code sessions (Mac → VPS aggregation)
+Description=Sync VPS Claude Code sessions to aggregation directory
 After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=%h/bin/sync-claude-sessions.sh
+User=vijendra
+ExecStart=/home/vijendra/bin/sync-vps-local.sh
 StandardOutput=journal
 StandardError=journal

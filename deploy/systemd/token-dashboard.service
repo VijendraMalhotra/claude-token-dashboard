@@ -4,13 +4,14 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 %h/token-dashboard/cli.py dashboard --no-open --projects-dir %h/claude-sessions
+User=vijendra
+ExecStart=/usr/bin/python3 /home/vijendra/token-dashboard/cli.py dashboard --no-open --projects-dir /home/vijendra/claude-sessions
 # HOST: bind to the VPS LAN IP so the Mac browser can reach it.
-# Replace with the actual IP from `ip a` — do not use 0.0.0.0.
+# install.sh auto-detects and patches this line — replace if needed.
 Environment=HOST=192.168.1.x
 Environment=PORT=8080
 Restart=on-failure
 RestartSec=10
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target

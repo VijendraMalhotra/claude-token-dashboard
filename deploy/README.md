@@ -6,88 +6,89 @@ This directory contains everything needed to run the dashboard on an internal VP
 
 ```
 Mac (~/.claude/projects/)
-    │  rsync over SSH (hourly, pull model)
+    │  rsync push over SSH (hourly via launchd)
+    │  Mac is active → pushes immediately
     ▼
 VPS (~/claude-sessions/)
-    ├── mac__<slug>/    ← Mac sessions, prefixed
-    └── vps__<slug>/   ← VPS local sessions, prefixed
+    ├── mac__<slug>/    ← pushed from Mac
+    └── vps__<slug>/   ← mirrored locally by VPS sync service
          │
          ▼
-    token-dashboard (reads ~/claude-sessions/)
-    bound to LAN IP:8080
+    token-dashboard reads ~/claude-sessions/
+    system service, bound to LAN IP:8080
 ```
+
+**Why Mac pushes (not VPS pulls):** The VPS is always on and reachable at a fixed LAN IP — it's the stable target. The Mac only needs SSH to `vps`, not the other way around.
 
 The `mac__` / `vps__` prefix on each project directory is what lets the machine filter dropdown in the UI scope results to a single machine.
 
-## Prerequisites on the VPS
+## Install order
 
-- Python 3.8+
-- `git`, `rsync`
-- SSH key already accepted from the VPS to the Mac (test with `ssh mac 'ls ~/.claude/projects'`)
-- The Mac's SSH alias must be `mac` in `~/.ssh/config` (or edit `sync-claude-sessions.sh`)
-
-## Install
+### 1. VPS first
 
 ```bash
 git clone https://github.com/VijendraMalhotra/claude-token-dashboard.git ~/token-dashboard
 bash ~/token-dashboard/deploy/install.sh
 ```
 
-Then the one sudo step the installer can't do:
+This sets up:
+- `~/claude-sessions/` (aggregation dir the dashboard reads from)
+- `~/bin/sync-vps-local.sh` (mirrors VPS local sessions to `vps__` prefix)
+- Three system-level systemd services (no `loginctl enable-linger` needed)
+- The dashboard bound to the detected LAN IP on port 8080
+
+### 2. Mac second
 
 ```bash
-sudo loginctl enable-linger $(whoami)
+# On the Mac — repo must already be cloned here too
+bash ~/token-dashboard/deploy/mac/install-mac.sh
 ```
 
-## What install.sh does
+This sets up:
+- `~/bin/mac-push.sh` (rsync pushes Mac sessions to VPS with `mac__` prefix)
+- A launchd agent that runs the push hourly and at login
 
-1. Checks prerequisites
-2. Auto-detects the VPS LAN IP and patches `token-dashboard.service`
-3. Clones (or updates) the repo to `~/token-dashboard/`
-4. Creates `~/claude-sessions/` (the aggregation dir)
-5. Installs `sync-claude-sessions.sh` to `~/bin/`
-6. Installs and enables three systemd user units:
-   - `claude-sync.timer` — triggers the sync hourly
-   - `claude-sync.service` — runs the sync script
-   - `token-dashboard.service` — runs the dashboard server
-7. Runs the first sync and first DB scan
+**Prerequisites for the Mac step:**
+- SSH alias `vps` must exist in `~/.ssh/config` pointing at the VPS
+- Key-based auth must already work: `ssh vps 'ls'` succeeds without a password
+- VPS install must be done first so `~/claude-sessions/` exists there
 
 ## Files
 
-| File | Purpose |
-|---|---|
-| `install.sh` | One-shot installer |
-| `sync-claude-sessions.sh` | rsync Mac + local sessions into `~/claude-sessions/` with `mac__`/`vps__` prefixes |
-| `systemd/claude-sync.service` | systemd one-shot unit that calls the sync script |
-| `systemd/claude-sync.timer` | Hourly timer for the sync |
-| `systemd/token-dashboard.service` | Runs `cli.py dashboard` bound to the VPS LAN IP |
+| File | Runs on | Purpose |
+|---|---|---|
+| `install.sh` | VPS | One-shot VPS installer |
+| `sync-vps-local.sh` | VPS | Mirrors `~/.claude/projects/` → `~/claude-sessions/vps__*` |
+| `systemd/claude-sync.service` | VPS | Calls `sync-vps-local.sh` as a system service |
+| `systemd/claude-sync.timer` | VPS | Hourly timer for the VPS sync |
+| `systemd/token-dashboard.service` | VPS | Runs the dashboard, bound to LAN IP |
+| `mac/mac-push.sh` | Mac | rsync pushes Mac sessions to VPS `mac__` prefix |
+| `mac/com.vgx.claude-push.plist` | Mac | launchd agent (hourly push) |
+| `mac/install-mac.sh` | Mac | One-shot Mac installer |
 
 ## Useful commands
 
 ```bash
-# Check sync timer
-systemctl --user status claude-sync.timer
+# VPS — check services
+sudo systemctl status token-dashboard
+sudo systemctl status claude-sync.timer
+journalctl -u claude-sync.service -n 30
+journalctl -u token-dashboard.service -n 30
 
-# View last sync log
-journalctl --user -u claude-sync.service -n 30
+# VPS — force a local sync now
+sudo systemctl start claude-sync.service
 
-# Force a sync now
-systemctl --user start claude-sync.service
-
-# Check dashboard service
-systemctl --user status token-dashboard
-
-# Restart dashboard
-systemctl --user restart token-dashboard
-```
-
-## Updating
-
-```bash
+# VPS — update dashboard
 git -C ~/token-dashboard pull --ff-only
-systemctl --user restart token-dashboard
+sudo systemctl restart token-dashboard
+
+# Mac — check push log
+tail -f ~/Library/Logs/claude-push.log
+
+# Mac — force a push now
+~/bin/mac-push.sh
 ```
 
 ## Security note
 
-The dashboard is bound to the LAN IP (not 0.0.0.0) and is only accessible from within your home network. Do not expose port 8080 to the public internet — the JSONL files contain full prompt and response transcripts.
+The dashboard is bound to the VPS LAN IP (not `0.0.0.0`) and is only accessible from within your home network. Do not expose port 8080 to the public internet — the JSONL files contain full prompt and response transcripts.

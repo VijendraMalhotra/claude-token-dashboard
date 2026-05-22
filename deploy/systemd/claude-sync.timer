@@ -1,5 +1,5 @@
 [Unit]
-Description=Hourly Claude Code session sync
+Description=Hourly VPS session sync
 
 [Timer]
 OnBootSec=2min
@@ -7,4 +7,4 @@ OnUnitActiveSec=1h
 Persistent=true
 
 [Install]
-WantedBy=timers.target
+WantedBy=multi-user.target
