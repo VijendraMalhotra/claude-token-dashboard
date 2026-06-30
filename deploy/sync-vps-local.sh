@@ -37,7 +37,7 @@ done
 for d in "$AGG_DIR"/vps__*/; do
     [[ -d "$d" ]] || continue
     slug="${d#${AGG_DIR}/vps__}"; slug="${slug%/}"
-    printf '%s\n' "${slugs[@]:-}" | grep -qxF "$slug" || rm -rf "$d"
+    printf '%s\n' "${slugs[@]:-}" | grep -qxF -- "$slug" || rm -rf "$d"
 done
 
-log "vps sync OK (${#slugs[@]:-0} projects)"
+log "vps sync OK (${#slugs[@]} projects)"

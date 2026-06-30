@@ -39,8 +39,8 @@ done
 remote_dirs=$(ssh "$VPS_SSH" "ls -d ${VPS_AGG}/mac__*/ 2>/dev/null || true")
 for d in $remote_dirs; do
     slug="${d#${VPS_AGG}/mac__}"; slug="${slug%/}"
-    printf '%s\n' "${slugs[@]:-}" | grep -qxF "$slug" \
+    printf '%s\n' "${slugs[@]:-}" | grep -qxF -- "$slug" \
         || ssh "$VPS_SSH" "rm -rf '${VPS_AGG}/mac__${slug}'"
 done
 
-log "push OK (${#slugs[@]:-0} projects → $VPS_SSH:$VPS_AGG)"
+log "push OK (${#slugs[@]} projects → $VPS_SSH:$VPS_AGG)"
