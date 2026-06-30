@@ -1,12 +1,35 @@
 # Token Dashboard
 
+**Version 1.2.0**
+
 A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
 
 **Everything runs locally.** No data leaves your machine — no telemetry, no API calls for your data, no login.
 
+Supports **multi-machine aggregation** — aggregate sessions from a Mac and a VPS under one dashboard, with a machine filter dropdown to scope any tab to a single machine.
+
 ![Overview tab — totals and daily charts](docs/images/dashboard-overview-top.jpg)
 
 ![Overview tab — per-project, per-model, top tools, recent sessions](docs/images/dashboard-overview-bottom.jpg)
+
+## Changelog
+
+### v1.2.0 (2026-05-22)
+- Machine filter dropdown in the topbar — scope any tab to Mac, VPS, or all machines
+- Multi-machine deploy infrastructure: Mac-push model (launchd) + VPS system services (systemd)
+- All `/api/*` endpoints accept `?machine=mac|vps` for server-side filtering
+- Project slug prefixing (`mac__` / `vps__`) for unambiguous multi-machine aggregation
+
+### v1.1.0 (2026-05-20)
+- Privacy and input-validation hardening pass
+- Scanner: preserve accounting under partial flushes and rescans
+- OSS release preparation
+
+### v1.0.0 (initial)
+- Core scanner, server, and UI (forked from nateherkai/token-dashboard)
+- Per-prompt cost analytics, tool/file heatmaps, cache analytics
+- Tips engine (4 rule sets), Skills tab, Settings (plan selector)
+- Streaming-snapshot dedup by `message.id`
 
 ## What this is useful for
 
@@ -85,9 +108,15 @@ python3 cli.py dashboard --no-scan   # skip the initial scan (use cached DB only
 
 Change the port: `PORT=9000 python3 cli.py dashboard`.
 
+## Multi-machine setup
+
+To aggregate sessions from a Mac and a VPS under one dashboard, use the scripts in `deploy/`. The Mac pushes sessions to the VPS hourly via rsync; the VPS mirrors its own sessions locally. Each project gets a `mac__` or `vps__` prefix so the UI can tell them apart.
+
+See [`deploy/README.md`](deploy/README.md) for the full install order and architecture diagram.
+
 ## The 7 tabs
 
-The dashboard is a single page with a hash-router tab bar across the top. Each tab is backed by its own JSON API under `/api/`:
+The dashboard is a single page with a hash-router tab bar across the top. Each tab is backed by its own JSON API under `/api/`. A **machine filter dropdown** in the topbar scopes every tab to `All`, `Mac`, or `VPS` — state persists across page reloads via `localStorage`.
 
 - **Overview** — all-time input/output/cache tokens, sessions, turns, estimated cost on your chosen plan, daily work and cache-read charts, tokens-by-project, token share by model, top tools by call count, and recent sessions. This is the landing tab.
 - **Prompts** — your most expensive user prompts ranked by tokens. Click any row to see the assistant response, tool calls made, and the size of each tool result.

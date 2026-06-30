@@ -9,8 +9,8 @@
 
 set -euo pipefail
 
-VPS_SSH="vps"                                    # SSH alias for the internal VPS
-VPS_AGG="/home/vijendra/claude-sessions"         # aggregation dir on the VPS
+VPS_SSH="VGUbuntu"                               # SSH alias for the internal VPS
+VPS_AGG='~/claude-sessions'                      # aggregation dir on the VPS (expanded by remote shell)
 MAC_PROJECTS="${HOME}/.claude/projects"
 
 log() { echo "[$(date -Iseconds)] $*"; }

@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-User=vijendra
-ExecStart=/home/vijendra/bin/sync-vps-local.sh
+User=USER_PLACEHOLDER
+ExecStart=/usr/bin/bash DASHBOARD_DIR_PLACEHOLDER/deploy/sync-vps-local.sh
 StandardOutput=journal
 StandardError=journal

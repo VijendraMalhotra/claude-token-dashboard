@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/vijendra/bin/mac-push.sh</string>
+        <string>HOME_PLACEHOLDER/bin/mac-push.sh</string>
     </array>
 
     <!-- Run once at load, then every hour -->
@@ -17,8 +17,8 @@
     <integer>3600</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/vijendra/Library/Logs/claude-push.log</string>
+    <string>HOME_PLACEHOLDER/Library/Logs/claude-push.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/vijendra/Library/Logs/claude-push.log</string>
+    <string>HOME_PLACEHOLDER/Library/Logs/claude-push.log</string>
 </dict>
 </plist>

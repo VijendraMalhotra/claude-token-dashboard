@@ -1,10 +1,14 @@
 # CLAUDE.md
 
+# Copyright (c) 2026 VGX Global Consulting (OPC) Private Limited. All rights reserved.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project overview
 
 **Token Dashboard** — a local dashboard for tracking Claude Code token usage, costs, and session history. Reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
+
+Supports **multi-machine aggregation**: a Mac pushes sessions to an internal VPS via launchd + rsync, the VPS mirrors its own sessions locally, and both sets appear under `mac__` / `vps__` project prefixes. A machine filter dropdown scopes every tab to a single machine or shows all.
 
 Runs on macOS, Windows, and Linux. No `pip install`. No Node.js. No build step.
 
@@ -47,12 +51,30 @@ cli.py
   → pricing.py       per-model rates + plan-aware cost formatting
 
 web/
-  app.js             router, state, fetch helpers, SSE listener, privacy-blur
+  app.js             router, state (incl. state.machine), fetch helpers (api/apiF), SSE listener, privacy-blur
   routes/            one JS module per tab — loaded lazily on navigation
   charts.js          ECharts wrappers (vendored, no CDN)
+
+deploy/
+  install.sh              VPS one-shot installer (system-level systemd)
+  sync-vps-local.sh       VPS: mirrors ~/.claude/projects/ → ~/claude-sessions/vps__*
+  systemd/                claude-sync.{service,timer} + token-dashboard.service
+  mac/install-mac.sh      Mac one-shot installer (launchd)
+  mac/mac-push.sh         Mac: rsync-pushes sessions to VPS mac__* prefix
+  mac/com.vgx.claude-push.plist   launchd agent (hourly + at login)
 ```
 
 `web/` is vanilla JS with ES module imports and a hash router (`#/overview`, `#/prompts`, etc.). No build step — the server serves it as-is. ECharts is vendored into `web/` rather than loaded from a CDN to keep the dashboard fully offline.
+
+### Machine filter
+
+All `/api/*` routes accept a `?machine=mac|vps` query parameter. In `db.py`, `_machine_clause()` translates this to `project_slug GLOB 'mac__*'` (or `vps__*`). All eight query helpers thread the `machine` parameter through their WHERE clauses.
+
+In JS, `web/app.js` exports two fetch helpers:
+- `api(path)` — bare fetch, used for session detail (never filtered)
+- `apiF(path)` — appends `&machine=${state.machine}` automatically, used in all tab data-fetching calls
+
+`state.machine` is persisted to `localStorage` and defaults to `""` (all machines). The filter `<select>` in the topbar updates `state.machine` and re-renders the current tab.
 
 ## Data pipeline
 

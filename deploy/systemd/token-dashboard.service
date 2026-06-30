@@ -4,11 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=vijendra
-ExecStart=/usr/bin/python3 /home/vijendra/token-dashboard/cli.py dashboard --no-open --projects-dir /home/vijendra/claude-sessions
-# HOST: bind to the VPS LAN IP so the Mac browser can reach it.
-# install.sh auto-detects and patches this line — replace if needed.
-Environment=HOST=192.168.1.x
+User=USER_PLACEHOLDER
+ExecStart=/usr/bin/python3 DASHBOARD_DIR_PLACEHOLDER/cli.py dashboard --no-open --projects-dir AGG_DIR_PLACEHOLDER
+Environment=HOST=LAN_IP_PLACEHOLDER
 Environment=PORT=8080
 Restart=on-failure
 RestartSec=10

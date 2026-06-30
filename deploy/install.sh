@@ -4,22 +4,20 @@
 #
 # What this does:
 #   1. Checks prerequisites
-#   2. Clones the repo to ~/token-dashboard/
-#   3. Creates ~/claude-sessions/ (the aggregation directory)
-#   4. Installs sync-vps-local.sh to ~/bin/
-#   5. Installs 3 system-level systemd units (no loginctl linger needed)
-#   6. Auto-detects the VPS LAN IP and patches the dashboard service
-#   7. Runs the first VPS session mirror and first DB scan
-#   8. Prints the dashboard URL and next steps
+#   2. Clones the repo to $DASHBOARD_DIR
+#   3. Creates $AGG_DIR (aggregation directory the dashboard reads)
+#   4. Installs 3 system-level systemd units (no loginctl linger needed)
+#   5. Auto-detects the VPS LAN IP and patches service files
+#   6. Runs the first VPS session mirror and first DB scan
+#   7. Prints the dashboard URL and next steps
 #
 # Copyright (c) 2026 VGX Global Consulting (OPC) Pvt Ltd
 
 set -euo pipefail
 
 REPO="https://github.com/VijendraMalhotra/claude-token-dashboard.git"
-DASHBOARD_DIR="/home/vijendra/token-dashboard"
-AGG_DIR="/home/vijendra/claude-sessions"
-BIN_DIR="/home/vijendra/bin"
+DASHBOARD_DIR="${HOME}/Workspace/ConsultingGitRepos/VGX/claude-token-dashboard"
+AGG_DIR="${HOME}/claude-sessions"
 PORT=8080
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -47,6 +45,7 @@ fi
 ok "LAN IP: $LAN_IP"
 
 # ── Clone or update repo ──────────────────────────────────────────────────────
+mkdir -p "$(dirname "$DASHBOARD_DIR")"
 if [[ -d "$DASHBOARD_DIR/.git" ]]; then
     warn "Repo already exists — pulling latest."
     git -C "$DASHBOARD_DIR" pull --ff-only
@@ -59,30 +58,29 @@ ok "Repo at $DASHBOARD_DIR"
 mkdir -p "$AGG_DIR"
 ok "Aggregation dir: $AGG_DIR"
 
-# ── VPS local sync script ─────────────────────────────────────────────────────
-mkdir -p "$BIN_DIR"
-cp "$DASHBOARD_DIR/deploy/sync-vps-local.sh" "$BIN_DIR/sync-vps-local.sh"
-chmod +x "$BIN_DIR/sync-vps-local.sh"
-ok "VPS sync script installed to $BIN_DIR/sync-vps-local.sh"
-
 # ── System-level systemd units ────────────────────────────────────────────────
 sudo cp "$DASHBOARD_DIR/deploy/systemd/claude-sync.service"     /etc/systemd/system/
 sudo cp "$DASHBOARD_DIR/deploy/systemd/claude-sync.timer"       /etc/systemd/system/
 sudo cp "$DASHBOARD_DIR/deploy/systemd/token-dashboard.service" /etc/systemd/system/
 
-# Patch the LAN IP into the dashboard service
-sudo sed -i "s|HOST=192.168.1.x|HOST=${LAN_IP}|" /etc/systemd/system/token-dashboard.service
+# Patch real values into the installed service files
+sudo sed -i "s|DASHBOARD_DIR_PLACEHOLDER|${DASHBOARD_DIR}|g" /etc/systemd/system/claude-sync.service
+sudo sed -i "s|DASHBOARD_DIR_PLACEHOLDER|${DASHBOARD_DIR}|g" /etc/systemd/system/token-dashboard.service
+sudo sed -i "s|AGG_DIR_PLACEHOLDER|${AGG_DIR}|g"             /etc/systemd/system/token-dashboard.service
+sudo sed -i "s|USER_PLACEHOLDER|$(whoami)|g"                  /etc/systemd/system/claude-sync.service
+sudo sed -i "s|USER_PLACEHOLDER|$(whoami)|g"                  /etc/systemd/system/token-dashboard.service
+sudo sed -i "s|HOST=LAN_IP_PLACEHOLDER|HOST=${LAN_IP}|"       /etc/systemd/system/token-dashboard.service
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now claude-sync.timer
 sudo systemctl enable --now token-dashboard.service
 
-ok "System services installed and started (no loginctl linger needed)"
+ok "System services installed and started"
 
 # ── First VPS session mirror ──────────────────────────────────────────────────
 echo
 echo "Mirroring VPS local sessions..."
-"$BIN_DIR/sync-vps-local.sh" || warn "Mirror had errors — check above."
+bash "$DASHBOARD_DIR/deploy/sync-vps-local.sh" || warn "Mirror had errors — check above."
 
 # ── First DB scan ─────────────────────────────────────────────────────────────
 echo
@@ -95,8 +93,8 @@ ok "VPS install complete."
 echo
 echo "  Dashboard URL: http://${LAN_IP}:${PORT}/"
 echo
-echo "  Mac sessions will appear once you run install-mac.sh on the Mac:"
-echo "    bash ~/token-dashboard/deploy/mac/install-mac.sh"
+echo "  Mac sessions will appear once you run on the Mac:"
+echo "    bash ${DASHBOARD_DIR}/deploy/mac/install-mac.sh"
 echo
 echo "Check status:"
 echo "  sudo systemctl status token-dashboard"
