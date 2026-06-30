@@ -26,10 +26,12 @@ if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 "$VPS_SSH" exit 2>/dev/null; th
     exit 1
 fi
 
-mapfile -t slugs < <(ls "$MAC_PROJECTS" 2>/dev/null || true)
+slugs=()
+while IFS= read -r slug; do
+    [[ -n "$slug" ]] && slugs+=("$slug")
+done < <(ls "$MAC_PROJECTS" 2>/dev/null || true)
 
 for slug in "${slugs[@]:-}"; do
-    [[ -z "$slug" ]] && continue
     rsync -a --delete \
           "$MAC_PROJECTS/$slug/" \
           "$VPS_SSH:$VPS_AGG/mac__${slug}/"
