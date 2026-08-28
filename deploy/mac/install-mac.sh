@@ -3,7 +3,7 @@
 #
 # What this does:
 #   1. Verifies SSH to the VPS works
-#   2. Installs a `claude-push` fish function that calls mac-push.sh
+#   2. Installs a `push-claude-stats` fish function that calls mac-push.sh
 #   3. Runs the first push
 #
 # There is no scheduler by design. macOS launchd and cron run in a TCC context
@@ -44,9 +44,11 @@ if [[ -f "$LEGACY_PLIST" ]]; then
 fi
 
 if [[ -d "$FISH_FUNCS" ]]; then
+    # Fish autoloads by filename, so the file name must match the function name.
     sed "s|@SCRIPT_DIR@|${SCRIPT_DIR}|g" \
-        "$SCRIPT_DIR/claude-push.fish" > "${FISH_FUNCS}/claude-push.fish"
-    ok "Installed fish function: claude-push (push + rescan + summary)"
+        "$SCRIPT_DIR/push-claude-stats.fish" > "${FISH_FUNCS}/push-claude-stats.fish"
+    rm -f "${FISH_FUNCS}/claude-push.fish"   # superseded name
+    ok "Installed fish function: push-claude-stats (push + rescan + summary)"
 else
     ok "No fish config found — run the push with: bash ${SCRIPT_DIR}/mac-push.sh"
 fi
@@ -58,5 +60,5 @@ bash "$SCRIPT_DIR/mac-push.sh"
 echo
 ok "Done."
 echo
-echo "Push now:   claude-push       # rsync up, rescan, print the summary"
+echo "Push now:   push-claude-stats   # rsync up, rescan, print the summary"
 echo "Dashboard:  http://<vps>:8080/#/overview"

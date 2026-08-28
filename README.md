@@ -1,6 +1,6 @@
 # Token Dashboard
 
-**Version 1.5.1**
+**Version 1.5.2**
 
 A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
 
@@ -13,6 +13,9 @@ Supports **multi-machine aggregation** — aggregate sessions from a Mac and a V
 ![Overview tab — per-project, per-model, top tools, recent sessions](docs/images/dashboard-overview-bottom.jpg)
 
 ## Changelog
+
+### v1.5.2 (2026-08-28)
+- Renamed the Mac command `claude-push` → **`push-claude-stats`** (`deploy/mac/push-claude-stats.fish`). Fish autoloads by filename, so the file and the function name have to match; `install-mac.sh` removes the old file on upgrade
 
 ### v1.5.1 (2026-08-28)
 - `claude-push` now rescans after pushing and prints the summary band — pushing alone left the dashboard showing stale numbers
@@ -145,12 +148,13 @@ sessions on a systemd timer, and receives the Mac's sessions by rsync. Each proj
 `mac__` or `vps__` prefix, which is what the machine-filter dropdown keys off.
 
 ```
-Mac  ~/.claude/projects/                    VPS  ~/claude-sessions/
-        │                                          ├── mac__<slug>/   ← pushed from the Mac
-        │  claude-push  (manual, on the LAN)  ───▶ └── vps__<slug>/   ← mirrored by systemd timer
-                                                             │
-                                             token-dashboard.service reads both
-                                             http://<vps-lan-ip>:8080
+Mac                                    VPS
+~/.claude/projects/                    ~/claude-sessions/
+        │                                ├── mac__<slug>/   ← pushed from the Mac
+        └── push-claude-stats ──────▶    └── vps__<slug>/   ← mirrored by a systemd timer
+            (manual, home LAN)                     │
+                                       token-dashboard.service reads both
+                                       http://<vps-lan-ip>:8080
 ```
 
 ### Day to day
@@ -158,7 +162,7 @@ Mac  ~/.claude/projects/                    VPS  ~/claude-sessions/
 One command on the Mac, after a session's worth of work:
 
 ```fish
-claude-push
+push-claude-stats
 ```
 
 It rsyncs the sessions up, triggers `/api/scan` so the dashboard actually ingests them, and prints
@@ -178,7 +182,7 @@ scan OK
 ```
 
 **Pushing without scanning shows stale numbers** — the files land on disk but nothing reads them into
-SQLite. `claude-push` does both; `bash deploy/mac/mac-push.sh` only does the first.
+SQLite. `push-claude-stats` does both; `bash deploy/mac/mac-push.sh` only does the first.
 
 ### First-time install
 
@@ -205,7 +209,7 @@ git clone https://github.com/VijendraMalhotra/claude-token-dashboard.git ~/token
 bash ~/token-dashboard/deploy/mac/install-mac.sh
 ```
 
-Verifies SSH, installs the `claude-push` fish function, removes any legacy launchd agent, and runs
+Verifies SSH, installs the `push-claude-stats` fish function, removes any legacy launchd agent, and runs
 the first push.
 
 **3. Set your plan**
@@ -233,7 +237,7 @@ failed 1076 times across 59 days without succeeding once. Session data only chan
 runs, so an on-demand push loses nothing and needs no second copy of your private key. The VPS side
 *is* scheduled, because Linux has no such restriction.
 
-The SSH alias points at a **LAN IP**, so `claude-push` only works on the home network.
+The SSH alias points at a **LAN IP**, so `push-claude-stats` only works on the home network.
 
 See [`deploy/README.md`](deploy/README.md) for the file-by-file reference.
 

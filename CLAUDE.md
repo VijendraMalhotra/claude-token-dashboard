@@ -68,10 +68,10 @@ deploy/
   install.sh              VPS one-shot installer (system-level systemd)
   sync-vps-local.sh       VPS: mirrors ~/.claude/projects/ → ~/claude-sessions/vps__*
   systemd/                claude-sync.{service,timer} + token-dashboard.service
-  mac/install-mac.sh      Mac one-shot installer (verifies SSH, installs claude-push)
+  mac/install-mac.sh      Mac one-shot installer (verifies SSH, installs push-claude-stats)
   mac/mac-push.sh         Mac: rsync-pushes sessions to VPS mac__* prefix
-  mac/claude-push.fish    the `claude-push` command: push + rescan + summary
-  mac/com.vgx.claude-push.plist   launchd agent (hourly + at login)
+  mac/push-claude-stats.fish    the `push-claude-stats` command: push + rescan + summary
+  mac/com.vgx.push-claude-stats.plist   launchd agent (hourly + at login)
   README.md               two-machine install walkthrough
 ```
 
@@ -89,7 +89,7 @@ In JS, `web/app.js` exports two fetch helpers:
 
 ### Mac push is on-demand — do not re-add a scheduler
 
-The user-facing command is `claude-push` (`deploy/mac/claude-push.fish`, installed into
+The user-facing command is `push-claude-stats` (`deploy/mac/push-claude-stats.fish`, installed into
 `~/.config/fish/functions/` by `install-mac.sh` with `@SCRIPT_DIR@` substituted). It does three
 things and all three matter: rsync via `mac-push.sh`, then `GET /api/scan`, then print the summary
 band. **Pushing without scanning leaves the dashboard stale** — the JSONL lands on disk but nothing

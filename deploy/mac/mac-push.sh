@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # mac-push.sh — runs on Mac, pushes Claude Code sessions to the VPS.
-# Run on demand: `claude-push` (fish function) or `bash deploy/mac/mac-push.sh`.
+# Run on demand: `push-claude-stats` (fish function) or `bash deploy/mac/mac-push.sh`.
 #
 # Deliberately NOT scheduled. launchd/cron on macOS cannot read ~/.ssh when it
 # symlinks into cloud storage (TCC denies the read), so a background schedule

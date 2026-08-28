@@ -1,4 +1,4 @@
-# claude-push — push this Mac's Claude Code sessions to the VPS dashboard.
+# push-claude-stats — push this Mac's Claude Code sessions to the VPS dashboard.
 #
 # Installed to ~/.config/fish/functions/ by install-mac.sh, which replaces
 # @SCRIPT_DIR@ with the repo's deploy/mac path.
@@ -10,7 +10,7 @@
 #
 # Copyright (c) 2026 VGX Global Consulting (OPC) Pvt Ltd
 
-function claude-push --description 'Push Claude Code sessions from this Mac to the VPS dashboard, then rescan'
+function push-claude-stats --description 'Push Claude Code sessions from this Mac to the VPS dashboard, then rescan'
     set -l script_dir '@SCRIPT_DIR@'
     set -l vps_ssh VGUbuntu
 
@@ -20,7 +20,7 @@ function claude-push --description 'Push Claude Code sessions from this Mac to t
     if test -z "$url"
         set -l host (ssh -G $vps_ssh 2>/dev/null | awk '/^hostname /{print $2}')
         if test -z "$host"
-            echo "claude-push: cannot resolve a host for SSH alias '$vps_ssh' — check ~/.ssh/config" >&2
+            echo "push-claude-stats: cannot resolve a host for SSH alias '$vps_ssh' — check ~/.ssh/config" >&2
             return 1
         end
         set url "http://$host:8080"
@@ -30,7 +30,7 @@ function claude-push --description 'Push Claude Code sessions from this Mac to t
     bash $script_dir/mac-push.sh
     set -l push_status $status
     if test $push_status -ne 0
-        echo "claude-push: push failed — are you on the home LAN?" >&2
+        echo "push-claude-stats: push failed — are you on the home LAN?" >&2
         return $push_status
     end
 
@@ -38,8 +38,8 @@ function claude-push --description 'Push Claude Code sessions from this Mac to t
     #    them into SQLite, so pushing without scanning shows stale numbers.
     set -l code (curl -s -o /dev/null -w '%{http_code}' -m 600 "$url/api/scan")
     if test "$code" != 200
-        echo "claude-push: pushed OK, but the rescan failed (HTTP $code at $url)" >&2
-        echo "             is token-dashboard running on the VPS?" >&2
+        echo "push-claude-stats: pushed OK, but the rescan failed (HTTP $code at $url)" >&2
+        echo "                    is token-dashboard running on the VPS?" >&2
         return 1
     end
     echo "scan OK"
