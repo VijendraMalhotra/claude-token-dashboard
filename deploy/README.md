@@ -67,7 +67,8 @@ This sets up:
 | `systemd/claude-sync.service` | VPS | Calls `sync-vps-local.sh` as a system service |
 | `systemd/claude-sync.timer` | VPS | Hourly timer for the VPS sync |
 | `systemd/token-dashboard.service` | VPS | Runs the dashboard, bound to LAN IP |
-| `mac/mac-push.sh` | Mac | rsync pushes Mac sessions to VPS `mac__` prefix — run on demand |
+| `mac/mac-push.sh` | Mac | rsync pushes Mac sessions to VPS `mac__` prefix |
+| `mac/claude-push.fish` | Mac | the `claude-push` command — push + rescan + summary |
 | `mac/install-mac.sh` | Mac | One-shot Mac installer (verifies SSH, installs `claude-push`) |
 
 ## Useful commands
@@ -86,8 +87,11 @@ sudo systemctl start claude-sync.service
 git -C ~/token-dashboard pull --ff-only
 sudo systemctl restart token-dashboard
 
-# Mac — push sessions to the VPS (must be on the home LAN)
+# Mac — push sessions to the VPS, rescan, print the summary (home LAN only)
 claude-push
+
+# Mac — push only, no rescan (dashboard will show stale numbers)
+bash deploy/mac/mac-push.sh
 ```
 
 ## Security note

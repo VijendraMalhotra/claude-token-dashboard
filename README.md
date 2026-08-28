@@ -1,6 +1,6 @@
 # Token Dashboard
 
-**Version 1.5.0**
+**Version 1.5.1**
 
 A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
 
@@ -13,6 +13,11 @@ Supports **multi-machine aggregation** — aggregate sessions from a Mac and a V
 ![Overview tab — per-project, per-model, top tools, recent sessions](docs/images/dashboard-overview-bottom.jpg)
 
 ## Changelog
+
+### v1.5.1 (2026-08-28)
+- `claude-push` now rescans after pushing and prints the summary band — pushing alone left the dashboard showing stale numbers
+- The command lives in the repo as `deploy/mac/claude-push.fish` instead of being generated inline by the installer
+- README documents the full two-machine setup: day-to-day use, first-time install order, how to deploy a code change, and why the Mac push is manual
 
 ### v1.5.0 (2026-08-28)
 - **Corrected pricing.** `pricing.json` carried the retired $15/$75 Opus rates; current Opus (4.5–5) is $5/$25, so every Opus cost was ~3× too high. Added Opus 5/4.8, Sonnet 5, Fable 5, Mythos 5 and the remaining current models with exact cache-write and cache-read rates
@@ -135,9 +140,102 @@ Change the port: `PORT=9000 python3 cli.py dashboard`.
 
 ## Multi-machine setup
 
-To aggregate sessions from a Mac and a VPS under one dashboard, use the scripts in `deploy/`. The Mac pushes sessions to the VPS with `claude-push` (on demand — macOS schedulers cannot read a cloud-synced `~/.ssh`); the VPS mirrors its own sessions locally on a systemd timer. Each project gets a `mac__` or `vps__` prefix so the UI can tell them apart.
+One dashboard, fed by two machines. The VPS is the host: it runs the web UI, mirrors its own
+sessions on a systemd timer, and receives the Mac's sessions by rsync. Each project directory gets a
+`mac__` or `vps__` prefix, which is what the machine-filter dropdown keys off.
 
-See [`deploy/README.md`](deploy/README.md) for the full install order and architecture diagram.
+```
+Mac  ~/.claude/projects/                    VPS  ~/claude-sessions/
+        │                                          ├── mac__<slug>/   ← pushed from the Mac
+        │  claude-push  (manual, on the LAN)  ───▶ └── vps__<slug>/   ← mirrored by systemd timer
+                                                             │
+                                             token-dashboard.service reads both
+                                             http://<vps-lan-ip>:8080
+```
+
+### Day to day
+
+One command on the Mac, after a session's worth of work:
+
+```fish
+claude-push
+```
+
+It rsyncs the sessions up, triggers `/api/scan` so the dashboard actually ingests them, and prints
+the verdict band:
+
+```
+[2026-08-28T07:19:47+05:30] push OK (27 projects → VGUbuntu:~/claude-sessions)
+scan OK
+
+  [ ok ] Value vs plan          15×
+  [ ok ] Prompt health          3 turns
+  [ ok ] Cache discipline       99%
+  [ ok ] Rework rate            10%
+  [ ok ] Opus on small asks     899
+
+  http://192.168.1.67:8080/#/overview
+```
+
+**Pushing without scanning shows stale numbers** — the files land on disk but nothing reads them into
+SQLite. `claude-push` does both; `bash deploy/mac/mac-push.sh` only does the first.
+
+### First-time install
+
+Order matters — the VPS must exist before the Mac can push to it.
+
+**1. VPS**
+
+```bash
+git clone https://github.com/VijendraMalhotra/claude-token-dashboard.git ~/token-dashboard
+bash ~/token-dashboard/deploy/install.sh
+```
+
+Creates `~/claude-sessions/`, installs `sync-vps-local.sh`, and starts three system-level systemd
+units (`claude-sync.service`, `claude-sync.timer`, `token-dashboard.service`) with the dashboard
+bound to the detected LAN IP on port 8080.
+
+**2. Mac**
+
+Prerequisites: an SSH alias `VGUbuntu` in `~/.ssh/config` pointing at the VPS, working key auth
+(`ssh VGUbuntu ls` with no password), and you on the home LAN.
+
+```bash
+git clone https://github.com/VijendraMalhotra/claude-token-dashboard.git ~/token-dashboard
+bash ~/token-dashboard/deploy/mac/install-mac.sh
+```
+
+Verifies SSH, installs the `claude-push` fish function, removes any legacy launchd agent, and runs
+the first push.
+
+**3. Set your plan**
+
+Settings tab → Plan. On a subscription the cost figures reframe as a value multiple over what the
+plan costs; left on API they read as pay-per-token money you do not actually owe.
+
+### Deploying a code change to the VPS
+
+```bash
+git push origin main
+ssh VGUbuntu 'git -C ~/token-dashboard pull --ff-only'
+ssh VGUbuntu 'sudo systemctl restart token-dashboard'
+```
+
+The Python modules load at import, so a restart is required; `web/` files are read per request and
+pick up on a browser refresh.
+
+### Why the Mac push is manual
+
+macOS `launchd` and `cron` run in a TCC-restricted context that cannot read `~/.ssh` when that
+directory symlinks into cloud storage (OneDrive, Dropbox, iCloud) — the key read returns
+`Operation not permitted`, so every scheduled run fails, silently, forever. A launchd agent here
+failed 1076 times across 59 days without succeeding once. Session data only changes when Claude Code
+runs, so an on-demand push loses nothing and needs no second copy of your private key. The VPS side
+*is* scheduled, because Linux has no such restriction.
+
+The SSH alias points at a **LAN IP**, so `claude-push` only works on the home network.
+
+See [`deploy/README.md`](deploy/README.md) for the file-by-file reference.
 
 ## The 7 tabs
 

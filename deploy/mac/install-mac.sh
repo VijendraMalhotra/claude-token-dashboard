@@ -44,12 +44,9 @@ if [[ -f "$LEGACY_PLIST" ]]; then
 fi
 
 if [[ -d "$FISH_FUNCS" ]]; then
-    cat > "${FISH_FUNCS}/claude-push.fish" <<EOF
-function claude-push --description 'Push Claude Code sessions from this Mac to the VPS'
-    bash ${SCRIPT_DIR}/mac-push.sh
-end
-EOF
-    ok "Installed fish function: claude-push"
+    sed "s|@SCRIPT_DIR@|${SCRIPT_DIR}|g" \
+        "$SCRIPT_DIR/claude-push.fish" > "${FISH_FUNCS}/claude-push.fish"
+    ok "Installed fish function: claude-push (push + rescan + summary)"
 else
     ok "No fish config found — run the push with: bash ${SCRIPT_DIR}/mac-push.sh"
 fi
@@ -61,5 +58,5 @@ bash "$SCRIPT_DIR/mac-push.sh"
 echo
 ok "Done."
 echo
-echo "Push now:   claude-push"
-echo "Log:        tail ~/Library/Logs/claude-push.log   (only written by the old agent)"
+echo "Push now:   claude-push       # rsync up, rescan, print the summary"
+echo "Dashboard:  http://<vps>:8080/#/overview"

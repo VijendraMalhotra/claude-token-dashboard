@@ -68,8 +68,9 @@ deploy/
   install.sh              VPS one-shot installer (system-level systemd)
   sync-vps-local.sh       VPS: mirrors ~/.claude/projects/ → ~/claude-sessions/vps__*
   systemd/                claude-sync.{service,timer} + token-dashboard.service
-  mac/install-mac.sh      Mac one-shot installer (launchd)
+  mac/install-mac.sh      Mac one-shot installer (verifies SSH, installs claude-push)
   mac/mac-push.sh         Mac: rsync-pushes sessions to VPS mac__* prefix
+  mac/claude-push.fish    the `claude-push` command: push + rescan + summary
   mac/com.vgx.claude-push.plist   launchd agent (hourly + at login)
   README.md               two-machine install walkthrough
 ```
@@ -88,7 +89,15 @@ In JS, `web/app.js` exports two fetch helpers:
 
 ### Mac push is on-demand — do not re-add a scheduler
 
-`deploy/mac/mac-push.sh` is run by hand (`claude-push`, or `bash deploy/mac/mac-push.sh`). It is **deliberately not scheduled**, and a launchd agent for it was removed on 2026-08-28 after it failed 1076 consecutive times over 59 days without ever succeeding once.
+The user-facing command is `claude-push` (`deploy/mac/claude-push.fish`, installed into
+`~/.config/fish/functions/` by `install-mac.sh` with `@SCRIPT_DIR@` substituted). It does three
+things and all three matter: rsync via `mac-push.sh`, then `GET /api/scan`, then print the summary
+band. **Pushing without scanning leaves the dashboard stale** — the JSONL lands on disk but nothing
+reads it into SQLite, so never suggest `mac-push.sh` alone as the way to refresh the dashboard. The
+dashboard URL is derived from `ssh -G <alias>` so there is no second place to update when the VPS
+moves; `TOKEN_DASHBOARD_URL` overrides it.
+
+It is **deliberately not scheduled**, and a launchd agent for it was removed on 2026-08-28 after it failed 1076 consecutive times over 59 days without ever succeeding once.
 
 Root cause, verified by probing a real launchd context: `~/.ssh` on this Mac symlinks into cloud storage (`~/OneDrive - VM/Dropbox/...`). launchd can `stat` that path but reading it returns `Operation not permitted` — TCC denies it. Both `id_rsa` **and** `config` are unreadable, so `ssh` never even resolves the `VGUbuntu` alias to its LAN IP and fails on a literal hostname lookup. macOS `cron` runs in the same restricted context and fails identically. Granting Full Disk Access or staging a plain-text key bundle outside cloud storage would work, but session data only changes when Claude Code runs, so an on-demand push loses nothing and costs no key duplication.
 
