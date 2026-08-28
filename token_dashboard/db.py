@@ -47,6 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_project   ON messages(project_slug);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_model     ON messages(model);
 CREATE INDEX IF NOT EXISTS idx_messages_msgid     ON messages(session_id, message_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sess_ts  ON messages(session_id, timestamp);
 
 CREATE TABLE IF NOT EXISTS tool_calls (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 CREATE INDEX IF NOT EXISTS idx_tools_session ON tool_calls(session_id);
 CREATE INDEX IF NOT EXISTS idx_tools_name    ON tool_calls(tool_name);
 CREATE INDEX IF NOT EXISTS idx_tools_target  ON tool_calls(target);
+CREATE INDEX IF NOT EXISTS idx_tools_sess_ts ON tool_calls(session_id, timestamp);
 
 CREATE TABLE IF NOT EXISTS plan (
   k TEXT PRIMARY KEY,
@@ -216,29 +218,127 @@ def overview_totals(db_path, since=None, until=None, machine=None) -> dict:
         return dict(c.execute(sql, args + margs).fetchone())
 
 
-def expensive_prompts(db_path, limit: int = 50, sort: str = "tokens", machine=None) -> list:
-    """User prompt joined with the immediately-following assistant turn's tokens.
+def prompt_spans(db_path, machine=None, since=None, until=None) -> list:
+    """One row per user prompt, covering the FULL span of work it triggered.
 
-    sort="tokens" (default) → largest billable first.
-    sort="recent"           → newest first.
+    A span runs from a prompt to the next real prompt in the same session, so
+    every assistant turn, subagent sidechain, and tool call in between is
+    attributed to the prompt that caused it. The old behaviour joined only the
+    single immediate child assistant message, which silently dropped everything
+    an agentic turn did after its first reply.
+
+    Only `is_sidechain = 0` prompts are listed: sidechain user rows are subagent
+    dispatch prompts written by Claude, not typed by the user, and they also
+    fragment spans (parallel dispatches land back-to-back, so each one's span
+    closes before the subagent does any work). The assistant join is NOT
+    sidechain-filtered, so subagent cost rolls up into the real prompt that
+    spawned it.
+
+    Usage is returned per model under `usage_by_model` because a span can switch
+    models mid-flight and each model prices differently. Cost is NOT computed
+    here — db.py must not import pricing (pricing imports db).
     """
-    order = "u.timestamp DESC" if sort == "recent" else "billable_tokens DESC"
-    mach, margs = _machine_clause(machine, col="u.project_slug")
-    sql = f"""
-      SELECT u.uuid AS user_uuid, u.session_id, u.project_slug, u.timestamp,
-             u.prompt_text, u.prompt_chars,
-             a.uuid AS assistant_uuid, a.model,
-             COALESCE(a.input_tokens,0)+COALESCE(a.output_tokens,0)
-               +COALESCE(a.cache_create_5m_tokens,0)+COALESCE(a.cache_create_1h_tokens,0) AS billable_tokens,
-             COALESCE(a.cache_read_tokens,0) AS cache_read_tokens
-        FROM messages u
-        JOIN messages a ON a.parent_uuid = u.uuid AND a.type='assistant'
-       WHERE u.type='user' AND u.prompt_text IS NOT NULL {mach}
-       ORDER BY {order}
-       LIMIT ?
+    mach, margs = _machine_clause(machine)
+    rng, rargs = _range_clause(since, until)
+    # Claude Code stores its own slash-command echoes and injected reminders as
+    # type='user' rows with text content. They are not prompts the user wrote,
+    # and leaving them in also breaks spans at every /exit or /effort.
+    NOISE = " OR ".join(
+        "prompt_text LIKE '%s'" % pat for pat in (
+            "<local-command-%", "<command-name>%",
+            "<command-message>%", "<system-reminder>%",
+        )
+    )
+    span_cte = f"""
+      WITH p AS (
+        SELECT uuid, session_id, project_slug, timestamp, prompt_text, prompt_chars,
+               LEAD(timestamp) OVER (
+                 PARTITION BY session_id ORDER BY timestamp, uuid
+               ) AS next_ts
+          FROM messages
+         WHERE type='user' AND prompt_text IS NOT NULL
+               AND is_sidechain = 0
+               AND NOT ({NOISE}) {mach} {rng}
+      )
     """
+
+    usage_sql = span_cte + """
+      SELECT p.uuid AS user_uuid, p.session_id, p.project_slug, p.timestamp,
+             p.prompt_text, p.prompt_chars,
+             a.model AS model,
+             COUNT(a.uuid) AS turns,
+             COALESCE(SUM(a.input_tokens),0)           AS input_tokens,
+             COALESCE(SUM(a.output_tokens),0)          AS output_tokens,
+             COALESCE(SUM(a.cache_read_tokens),0)      AS cache_read_tokens,
+             COALESCE(SUM(a.cache_create_5m_tokens),0) AS cache_create_5m_tokens,
+             COALESCE(SUM(a.cache_create_1h_tokens),0) AS cache_create_1h_tokens
+        FROM p
+        LEFT JOIN messages a
+          ON a.session_id = p.session_id
+         AND a.type = 'assistant'
+         AND a.timestamp >= p.timestamp
+         AND (p.next_ts IS NULL OR a.timestamp < p.next_ts)
+       GROUP BY p.uuid, a.model
+    """
+
+    tools_sql = span_cte + """
+      SELECT p.uuid AS user_uuid, COUNT(*) AS tool_calls
+        FROM p
+        JOIN tool_calls t
+          ON t.session_id = p.session_id
+         AND t.timestamp >= p.timestamp
+         AND (p.next_ts IS NULL OR t.timestamp < p.next_ts)
+         AND t.tool_name != '_tool_result'
+       GROUP BY p.uuid
+    """
+
+    args = margs + rargs
     with connect(db_path) as c:
-        return [dict(r) for r in c.execute(sql, (*margs, limit))]
+        usage_rows = [dict(r) for r in c.execute(usage_sql, args)]
+        tool_counts = {r["user_uuid"]: r["tool_calls"]
+                       for r in c.execute(tools_sql, args)}
+
+    out = {}
+    for r in usage_rows:
+        uid = r["user_uuid"]
+        row = out.get(uid)
+        if row is None:
+            row = out[uid] = {
+                "user_uuid": uid,
+                "session_id": r["session_id"],
+                "project_slug": r["project_slug"],
+                "timestamp": r["timestamp"],
+                "prompt_text": r["prompt_text"],
+                "prompt_chars": r["prompt_chars"],
+                "turns": 0,
+                "tool_calls": tool_counts.get(uid, 0),
+                "input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0,
+                "cache_create_5m_tokens": 0, "cache_create_1h_tokens": 0,
+                "usage_by_model": [],
+            }
+        # LEFT JOIN yields one all-NULL row for a prompt that triggered nothing
+        if r["model"] is None:
+            continue
+        row["turns"] += r["turns"]
+        for k in ("input_tokens", "output_tokens", "cache_read_tokens",
+                  "cache_create_5m_tokens", "cache_create_1h_tokens"):
+            row[k] += r[k]
+        per_model = {k: r[k] for k in (
+            "model", "input_tokens", "output_tokens", "cache_read_tokens",
+            "cache_create_5m_tokens", "cache_create_1h_tokens")}
+        per_model["turns"] = r["turns"]
+        row["usage_by_model"].append(per_model)
+
+    for row in out.values():
+        # badge model = whichever model did the most turns in the span
+        row["model"] = max(row["usage_by_model"], key=lambda m: m["turns"])["model"] \
+            if row["usage_by_model"] else None
+        row["billable_tokens"] = (row["input_tokens"] + row["output_tokens"]
+                                  + row["cache_create_5m_tokens"] + row["cache_create_1h_tokens"])
+        denom = row["billable_tokens"] - row["output_tokens"] + row["cache_read_tokens"]
+        row["cache_hit_pct"] = round(100.0 * row["cache_read_tokens"] / denom, 1) if denom else None
+
+    return sorted(out.values(), key=lambda r: r["timestamp"], reverse=True)
 
 
 def project_summary(db_path, since=None, until=None, machine=None) -> list:

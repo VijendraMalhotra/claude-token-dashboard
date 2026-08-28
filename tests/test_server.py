@@ -52,6 +52,18 @@ class ServerTests(unittest.TestCase):
     def test_prompts_json(self):
         body = json.loads(self._get("/api/prompts?limit=10"))
         self.assertIsInstance(body, list)
+        if body:
+            for k in ("cost_usd", "turns", "tool_calls", "cache_hit_pct"):
+                self.assertIn(k, body[0])
+            # internal per-model usage must not leak into the payload
+            self.assertNotIn("usage_by_model", body[0])
+
+    def test_prompt_trend_json(self):
+        body = json.loads(self._get("/api/prompt-trend"))
+        self.assertIsInstance(body, list)
+        if body:
+            for k in ("week", "prompts", "median_cost_usd", "median_turns"):
+                self.assertIn(k, body[0])
 
     def test_projects_json(self):
         body = json.loads(self._get("/api/projects"))

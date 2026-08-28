@@ -34,7 +34,8 @@ export default async function (root) {
   const range = readRange();
   const since = sinceIso(range);
 
-  const [totals, projects, sessions, tools, daily, byModel] = await Promise.all([
+  const [summary, totals, projects, sessions, tools, daily, byModel] = await Promise.all([
+    apiF(withSince('/api/summary', since)),
     apiF(withSince('/api/overview', since)),
     apiF(withSince('/api/projects', since)),
     apiF(withSince('/api/sessions?limit=10', since)),
@@ -58,6 +59,16 @@ export default async function (root) {
       ${RANGES.map(r => `<button data-range="${r.key}" class="${r.key === range.key ? 'active' : ''}">${r.label}</button>`).join('')}
     </div>`;
 
+  const verdictBand = `
+    <div class="row cols-5" style="margin-bottom:20px">
+      ${summary.map(c => `
+        <div class="card verdict ${c.verdict}">
+          <div class="label">${fmt.htmlSafe(c.label)}</div>
+          <div class="value">${fmt.htmlSafe(c.value)}</div>
+          <div class="detail">${fmt.htmlSafe(c.detail)}</div>
+        </div>`).join('')}
+    </div>`;
+
   root.innerHTML = `
     <div class="flex" style="margin-bottom:14px">
       <h2 style="margin:0;font-size:16px;letter-spacing:-0.01em">Overview</h2>
@@ -65,6 +76,8 @@ export default async function (root) {
       <div class="spacer"></div>
       ${rangeTabs}
     </div>
+
+    ${verdictBand}
 
     <div class="row cols-7">
       ${kpi('Sessions',     fmt.int(totals.sessions),       fmt.int(totals.sessions))}

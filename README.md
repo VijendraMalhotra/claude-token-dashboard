@@ -1,6 +1,6 @@
 # Token Dashboard
 
-**Version 1.2.0**
+**Version 1.4.0**
 
 A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
 
@@ -13,6 +13,25 @@ Supports **multi-machine aggregation** — aggregate sessions from a Mac and a V
 ![Overview tab — per-project, per-model, top tools, recent sessions](docs/images/dashboard-overview-bottom.jpg)
 
 ## Changelog
+
+### v1.4.0 (2026-08-28)
+- **Exec summary** at the top of the Overview tab: five colour-coded verdict cards (value, prompt health, cache discipline, rework rate, Opus right-sizing) that say whether each is fine, worth watching, or worth acting on
+- Subscription-aware framing — on a Pro/Max plan the cost figure is shown as a value multiple over what the plan costs, and right-sizing is described as quota rather than money
+- New `/api/summary` endpoint; `prompt_spans()` now accepts `since`/`until` so the summary follows the Overview range tabs
+
+### v1.3.0 (2026-08-28)
+- Prompts tab rebuilt around **prompt spans**: each prompt is now charged the full span of work it triggered — every assistant turn, subagent and tool call until the next prompt — instead of only the first assistant reply
+- New columns: turns, tool calls, true cost across all five token classes, and cache hit %
+- Weekly median cost-per-prompt trend chart, so "am I getting cheaper" is readable
+- Filter out subagent dispatch prompts and Claude Code's slash-command echoes, which were 28% of listed "prompts"
+- New `/api/prompt-trend` endpoint; `/api/prompts` now sorts by `cost` (default), `turns`, `tokens`, or `recent`
+- **Breaking:** `/api/prompts` replaces `estimated_cost_usd` (cache-read cost only) with `cost_usd` (whole-span cost)
+
+### v1.2.1 (2026-08-28)
+- Mac push is now on-demand (`claude-push`) — the launchd agent could never read a cloud-synced `~/.ssh` and had failed 1076 times without one success
+- Fix stale-dir cleanup in `mac-push.sh`: remote `ls -d ~/...` returns expanded paths, so the prefix strip misclassified every remote dir as stale
+- Fix `ssh` draining the cleanup loop's stdin (`ssh -n`), which skipped all dirs after the first
+- Deploy scripts: drop hardcoded paths, fix grep flag collision on dash-prefixed slugs, bash 3.2 compatibility
 
 ### v1.2.0 (2026-05-22)
 - Machine filter dropdown in the topbar — scope any tab to Mac, VPS, or all machines
@@ -110,7 +129,7 @@ Change the port: `PORT=9000 python3 cli.py dashboard`.
 
 ## Multi-machine setup
 
-To aggregate sessions from a Mac and a VPS under one dashboard, use the scripts in `deploy/`. The Mac pushes sessions to the VPS hourly via rsync; the VPS mirrors its own sessions locally. Each project gets a `mac__` or `vps__` prefix so the UI can tell them apart.
+To aggregate sessions from a Mac and a VPS under one dashboard, use the scripts in `deploy/`. The Mac pushes sessions to the VPS with `claude-push` (on demand — macOS schedulers cannot read a cloud-synced `~/.ssh`); the VPS mirrors its own sessions locally on a systemd timer. Each project gets a `mac__` or `vps__` prefix so the UI can tell them apart.
 
 See [`deploy/README.md`](deploy/README.md) for the full install order and architecture diagram.
 

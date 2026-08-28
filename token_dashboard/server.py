@@ -5,17 +5,20 @@ import http.server
 import json
 import mimetypes
 import queue
+import statistics
 import threading
 import time
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 from .db import (
-    overview_totals, expensive_prompts, project_summary,
+    overview_totals, prompt_spans, project_summary,
     tool_token_breakdown, recent_sessions, session_turns,
     daily_token_breakdown, model_breakdown, skill_breakdown,
 )
 from .pricing import load_pricing, cost_for, get_plan, set_plan
+from .summary import exec_summary
 from .tips import all_tips, dismiss_tip
 from .scanner import scan_dir
 from .skills import cached_catalog
@@ -50,6 +53,28 @@ def _clamp_limit(raw, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(1, min(v, MAX_LIMIT))
+
+
+def _priced_spans(db_path, pricing, machine):
+    """prompt_spans() + true cost across every model used inside each span."""
+    rows = prompt_spans(db_path, machine=machine)
+    for r in rows:
+        total, estimated = 0.0, False
+        for u in r["usage_by_model"]:
+            c = cost_for(u["model"], u, pricing)
+            if c["usd"] is None:
+                estimated = True
+            else:
+                total += c["usd"]
+                estimated = estimated or c["estimated"]
+        r["cost_usd"] = round(total, 6)
+        r["cost_estimated"] = estimated
+    return rows
+
+
+def _iso_week(ts: str) -> str:
+    y, w, _ = date.fromisoformat(ts[:10]).isocalendar()
+    return "%04d-W%02d" % (y, w)
 
 
 def _serve_static(handler, rel: str) -> None:
@@ -101,16 +126,40 @@ def build_handler(db_path: str, projects_dir: str):
                 return _send_json(self, totals)
             if path == "/api/prompts":
                 limit = _clamp_limit(qs.get("limit", ["50"])[0], 50)
-                sort = qs.get("sort", ["tokens"])[0]
-                rows = expensive_prompts(db_path, limit=limit, sort=sort, machine=machine)
+                sort = qs.get("sort", ["cost"])[0]
+                rows = _priced_spans(db_path, pricing, machine)
+                keys = {
+                    "cost":   lambda r: r["cost_usd"],
+                    "turns":  lambda r: r["turns"],
+                    "tokens": lambda r: r["billable_tokens"],
+                }
+                if sort == "recent":
+                    rows.sort(key=lambda r: r["timestamp"], reverse=True)
+                else:
+                    rows.sort(key=keys.get(sort, keys["cost"]), reverse=True)
+                rows = rows[:limit]
                 for r in rows:
-                    c = cost_for(r["model"], {
-                        "input_tokens": 0, "output_tokens": 0,
-                        "cache_read_tokens": r["cache_read_tokens"],
-                        "cache_create_5m_tokens": 0, "cache_create_1h_tokens": 0,
-                    }, pricing)
-                    r["estimated_cost_usd"] = c["usd"]
+                    r.pop("usage_by_model", None)
                 return _send_json(self, rows)
+            if path == "/api/summary":
+                return _send_json(self, exec_summary(
+                    db_path, pricing, get_plan(db_path), machine, since, until))
+            if path == "/api/prompt-trend":
+                rows = _priced_spans(db_path, pricing, machine)
+                buckets = {}
+                for r in rows:
+                    buckets.setdefault(_iso_week(r["timestamp"]), []).append(r)
+                out = []
+                for week in sorted(buckets):
+                    b = buckets[week]
+                    out.append({
+                        "week": week,
+                        "prompts": len(b),
+                        "median_cost_usd": round(statistics.median(x["cost_usd"] for x in b), 6),
+                        "median_turns": statistics.median(x["turns"] for x in b),
+                        "total_cost_usd": round(sum(x["cost_usd"] for x in b), 4),
+                    })
+                return _send_json(self, out)
             if path == "/api/projects":
                 return _send_json(self, project_summary(db_path, since, until, machine))
             if path == "/api/tools":

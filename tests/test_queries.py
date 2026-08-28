@@ -4,7 +4,7 @@ import unittest
 
 from token_dashboard.db import (
     init_db, connect,
-    overview_totals, expensive_prompts, project_summary,
+    overview_totals, prompt_spans, project_summary,
     tool_token_breakdown, recent_sessions, session_turns,
     daily_token_breakdown, model_breakdown, project_name_for,
     skill_breakdown,
@@ -39,15 +39,19 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(t["input_tokens"], 105)
         self.assertEqual(t["output_tokens"], 205)
 
-    def test_expensive_prompts_orders_by_tokens(self):
-        rows = expensive_prompts(self.db, limit=10)
-        self.assertGreaterEqual(len(rows), 2)
-        self.assertEqual(rows[0]["prompt_text"], "big prompt")
+    def test_prompt_spans_returns_newest_first(self):
+        rows = prompt_spans(self.db)
+        self.assertEqual([r["prompt_text"] for r in rows], ["small", "big prompt"])
 
-    def test_expensive_prompts_sort_recent(self):
-        rows = expensive_prompts(self.db, limit=10, sort="recent")
-        self.assertEqual(rows[0]["prompt_text"], "small")
-        self.assertEqual(rows[1]["prompt_text"], "big prompt")
+    def test_prompt_spans_attributes_usage_and_tools(self):
+        by_text = {r["prompt_text"]: r for r in prompt_spans(self.db)}
+        big = by_text["big prompt"]
+        self.assertEqual(big["turns"], 1)
+        self.assertEqual(big["tool_calls"], 2)
+        self.assertEqual(big["billable_tokens"], 300)     # 100 in + 200 out
+        self.assertEqual(big["cache_read_tokens"], 300)
+        self.assertEqual(big["model"], "claude-opus-4-7")
+        self.assertEqual(big["cache_hit_pct"], 75.0)      # 300 / (100 + 300)
 
     def test_project_summary_groups(self):
         rows = project_summary(self.db)
@@ -214,3 +218,60 @@ class ProjectNameInQueriesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PromptSpanTests(unittest.TestCase):
+    """Span attribution: the whole turn, minus what the user did not write."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self.tmp, "spans.db")
+        init_db(self.db)
+        with connect(self.db) as c:
+            c.executescript("""
+            INSERT INTO messages (uuid, parent_uuid, session_id, project_slug, type, timestamp, model,
+              input_tokens, output_tokens, cache_read_tokens, cache_create_5m_tokens, cache_create_1h_tokens,
+              is_sidechain, prompt_text, prompt_chars)
+            VALUES
+              -- a real prompt whose turn runs over three assistant messages
+              ('p1',NULL,'s1','projA','user','2026-04-10T00:00:00Z',NULL,0,0,0,0,0,0,'do the thing',12),
+              ('m1','p1','s1','projA','assistant','2026-04-10T00:00:01Z','claude-sonnet-4-6',10,10,0,0,0,0,NULL,NULL),
+              ('m2','m1','s1','projA','assistant','2026-04-10T00:00:02Z','claude-sonnet-4-6',10,10,0,0,0,0,NULL,NULL),
+              -- subagent dispatch: sidechain prompt (not user-written) + its sidechain reply
+              ('sp','m2','s1','projA','user','2026-04-10T00:00:03Z',NULL,0,0,0,0,0,1,'subagent task',13),
+              ('sm','sp','s1','projA','assistant','2026-04-10T00:00:04Z','claude-sonnet-4-6',5,5,0,0,0,1,NULL,NULL),
+              -- slash-command echo Claude Code writes as a user row
+              ('nz',NULL,'s1','projA','user','2026-04-10T00:00:05Z',NULL,0,0,0,0,0,0,'<local-command-stdout>ok</local-command-stdout>',30),
+              -- the next real prompt closes the span
+              ('p2',NULL,'s1','projA','user','2026-04-10T00:00:06Z',NULL,0,0,0,0,0,0,'next thing',10),
+              ('m3','p2','s1','projA','assistant','2026-04-10T00:00:07Z','claude-sonnet-4-6',1,1,0,0,0,0,NULL,NULL);
+            INSERT INTO tool_calls (message_uuid, session_id, project_slug, tool_name, target, timestamp, is_error)
+            VALUES ('m1','s1','projA','Read','a.py','2026-04-10T00:00:01Z',0),
+                   ('sm','s1','projA','Grep','x','2026-04-10T00:00:04Z',0),
+                   ('m1','s1','projA','_tool_result',NULL,'2026-04-10T00:00:01Z',0);
+            """)
+            c.commit()
+
+    def _by_text(self):
+        return {r["prompt_text"]: r for r in prompt_spans(self.db)}
+
+    def test_sidechain_and_command_noise_are_not_listed(self):
+        texts = set(self._by_text())
+        self.assertEqual(texts, {"do the thing", "next thing"})
+
+    def test_span_covers_every_turn_until_the_next_real_prompt(self):
+        # 2 direct assistant turns + 1 subagent turn, all before p2
+        self.assertEqual(self._by_text()["do the thing"]["turns"], 3)
+
+    def test_subagent_cost_rolls_up_into_the_prompt_that_spawned_it(self):
+        # 10+10 + 10+10 + 5+5 — the sidechain reply is included
+        self.assertEqual(self._by_text()["do the thing"]["billable_tokens"], 50)
+
+    def test_tool_result_rows_are_not_counted_as_tool_calls(self):
+        self.assertEqual(self._by_text()["do the thing"]["tool_calls"], 2)
+
+    def test_last_prompt_span_runs_to_end_of_session(self):
+        self.assertEqual(self._by_text()["next thing"]["turns"], 1)
+
+    def test_machine_filter_applies(self):
+        self.assertEqual(prompt_spans(self.db, machine="mac"), [])
