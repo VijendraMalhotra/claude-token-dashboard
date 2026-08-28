@@ -1,51 +1,65 @@
 #!/usr/bin/env bash
-# install-mac.sh — run once on the Mac to set up the hourly push to VPS.
+# install-mac.sh — run once on the Mac to set up the on-demand push to VPS.
 #
 # What this does:
-#   1. Patches and loads the launchd plist — calls mac-push.sh directly from repo
-#   2. Runs the first push immediately
+#   1. Verifies SSH to the VPS works
+#   2. Installs a `claude-push` fish function that calls mac-push.sh
+#   3. Runs the first push
+#
+# There is no scheduler by design. macOS launchd and cron run in a TCC context
+# that cannot read ~/.ssh when it symlinks into cloud storage (OneDrive,
+# Dropbox, iCloud); the key read fails with "Operation not permitted" and every
+# scheduled run fails silently. Session data only changes when Claude Code runs,
+# so pushing by hand costs nothing.
 #
 # Prerequisites:
-#   - SSH alias "VGUbuntu" must exist in ~/.ssh/config pointing at the VPS
-#   - SSH key auth must already work: ssh VGUbuntu 'ls' should succeed without a password
-#   - The VPS must have ~/claude-sessions/ created (run install.sh on VPS first)
+#   - SSH alias "VGUbuntu" in ~/.ssh/config pointing at the VPS
+#   - Key auth already works: ssh VGUbuntu 'ls' succeeds without a password
+#   - The VPS must have ~/claude-sessions/ (run install.sh on the VPS first)
 #
 # Copyright (c) 2026 VGX Global Consulting (OPC) Pvt Ltd
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLIST_NAME="com.vgx.claude-push"
-PLIST_DST="${HOME}/Library/LaunchAgents/${PLIST_NAME}.plist"
+FISH_FUNCS="${HOME}/.config/fish/functions"
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-ok()   { echo -e "${GREEN}✓${NC} $*"; }
-die()  { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
+GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
+ok()  { echo -e "${GREEN}\u2713${NC} $*"; }
+die() { echo -e "${RED}\u2717${NC} $*" >&2; exit 1; }
 
-echo "=== Mac push installer ==="
+echo "=== Mac push installer (on-demand) ==="
 echo
 
-# ── Check SSH to VPS ──────────────────────────────────────────────────────────
 ssh -q -o BatchMode=yes -o ConnectTimeout=5 VGUbuntu exit 2>/dev/null \
     || die "Cannot reach VPS via SSH alias 'VGUbuntu'. Check ~/.ssh/config and key auth."
 ok "SSH to VPS works"
 
-# ── Install launchd plist (patch repo path — launchd can't expand ~) ─────────
-mkdir -p "${HOME}/Library/LaunchAgents"
-sed "s|HOME_PLACEHOLDER|${HOME}|g; s|SCRIPT_DIR_PLACEHOLDER|${SCRIPT_DIR}|g" \
-    "$SCRIPT_DIR/com.vgx.claude-push.plist" > "$PLIST_DST"
+# Remove any legacy launchd agent from the old scheduled design
+LEGACY_PLIST="${HOME}/Library/LaunchAgents/com.vgx.claude-push.plist"
+if [[ -f "$LEGACY_PLIST" ]]; then
+    launchctl unload "$LEGACY_PLIST" 2>/dev/null || true
+    rm -f "$LEGACY_PLIST"
+    ok "Removed legacy launchd agent (it could never read ~/.ssh)"
+fi
 
-launchctl unload "$PLIST_DST" 2>/dev/null || true
-launchctl load "$PLIST_DST"
-ok "launchd agent loaded (runs every hour + at login)"
+if [[ -d "$FISH_FUNCS" ]]; then
+    cat > "${FISH_FUNCS}/claude-push.fish" <<EOF
+function claude-push --description 'Push Claude Code sessions from this Mac to the VPS'
+    bash ${SCRIPT_DIR}/mac-push.sh
+end
+EOF
+    ok "Installed fish function: claude-push"
+else
+    ok "No fish config found — run the push with: bash ${SCRIPT_DIR}/mac-push.sh"
+fi
 
-# ── First push ────────────────────────────────────────────────────────────────
 echo
 echo "Running first push..."
 bash "$SCRIPT_DIR/mac-push.sh"
 
 echo
-ok "Done. Mac will push sessions to VPS every hour automatically."
+ok "Done."
 echo
-echo "Monitor:     tail -f ~/Library/Logs/claude-push.log"
-echo "Force push:  bash ${SCRIPT_DIR}/mac-push.sh"
+echo "Push now:   claude-push"
+echo "Log:        tail ~/Library/Logs/claude-push.log   (only written by the old agent)"

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # mac-push.sh — runs on Mac, pushes Claude Code sessions to the VPS.
-# Called hourly by launchd via com.vgx.claude-push.plist.
+# Run on demand: `claude-push` (fish function) or `bash deploy/mac/mac-push.sh`.
+#
+# Deliberately NOT scheduled. launchd/cron on macOS cannot read ~/.ssh when it
+# symlinks into cloud storage (TCC denies the read), so a background schedule
+# fails silently forever. Session data only changes when Claude Code runs, so
+# running this by hand loses nothing.
 #
 # Mac sessions land in ~/claude-sessions/mac__<slug>/ on the VPS,
 # where the token dashboard picks them up via the machine filter.
@@ -22,7 +27,7 @@ fi
 
 # Test connectivity before iterating — fail fast if VPS is unreachable
 if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 "$VPS_SSH" exit 2>/dev/null; then
-    log "FAILED — cannot reach $VPS_SSH (VPS down or SSH key issue)"
+    log "FAILED — cannot reach $VPS_SSH (not on home LAN, VPS down, or SSH key issue)"
     exit 1
 fi
 
@@ -37,12 +42,20 @@ for slug in "${slugs[@]:-}"; do
           "$VPS_SSH:$VPS_AGG/mac__${slug}/"
 done
 
-# Remove stale mac__ dirs on VPS for projects deleted on Mac
-remote_dirs=$(ssh "$VPS_SSH" "ls -d ${VPS_AGG}/mac__*/ 2>/dev/null || true")
-for d in $remote_dirs; do
-    slug="${d#${VPS_AGG}/mac__}"; slug="${slug%/}"
-    printf '%s\n' "${slugs[@]:-}" | grep -qxF -- "$slug" \
-        || ssh "$VPS_SSH" "rm -rf '${VPS_AGG}/mac__${slug}'"
-done
+# Remove stale mac__ dirs on VPS for projects deleted on Mac.
+# List basenames only — a remote `ls -d ~/dir/*` returns EXPANDED absolute paths,
+# so stripping the literal '~/claude-sessions/' prefix silently fails and every
+# dir gets misclassified as stale. Let the remote shell expand $HOME instead.
+# Read line-by-line: `for d in $remote_dirs` depends on IFS word-splitting and
+# collapses to a single blob if IFS is unset, which classifies every dir as stale.
+while IFS= read -r d; do
+    slug="${d#mac__}"; slug="${slug%/}"
+    [[ -n "$slug" ]] || continue
+    if ! printf '%s\n' "${slugs[@]:-}" | grep -qxF -- "$slug"; then
+        log "removing stale remote dir: mac__${slug}"
+        # -n: without it ssh drains this loop's stdin and skips remaining dirs
+        ssh -n "$VPS_SSH" "rm -rf \"\$HOME/claude-sessions/mac__${slug}\""
+    fi
+done < <(ssh "$VPS_SSH" "cd ${VPS_AGG} 2>/dev/null && ls -1d mac__*/ 2>/dev/null || true")
 
 log "push OK (${#slugs[@]} projects → $VPS_SSH:$VPS_AGG)"

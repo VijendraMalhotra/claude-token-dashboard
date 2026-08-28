@@ -6,8 +6,8 @@ This directory contains everything needed to run the dashboard on an internal VP
 
 ```
 Mac (~/.claude/projects/)
-    │  rsync push over SSH (hourly via launchd)
-    │  Mac is active → pushes immediately
+    │  rsync push over SSH — on demand (`claude-push`)
+    │  not scheduled: see "Why the Mac push is manual" below
     ▼
 VPS (~/claude-sessions/)
     ├── mac__<slug>/    ← pushed from Mac
@@ -18,7 +18,11 @@ VPS (~/claude-sessions/)
     system service, bound to LAN IP:8080
 ```
 
-**Why Mac pushes (not VPS pulls):** The VPS is always on and reachable at a fixed LAN IP — it's the stable target. The Mac only needs SSH to `vps`, not the other way around.
+**Why Mac pushes (not VPS pulls):** The VPS is always on and reachable at a fixed LAN IP — it's the stable target. The Mac only needs SSH to `VGUbuntu`, not the other way around.
+
+**Why the Mac push is manual:** macOS `launchd` and `cron` run in a TCC-restricted context that cannot read `~/.ssh` when that directory symlinks into cloud storage (OneDrive, Dropbox, iCloud). The key read returns `Operation not permitted`, so every scheduled run fails — silently, forever. Session data only changes when Claude Code runs, so `claude-push` after a work session is equivalent. The VPS side *is* scheduled (systemd timer), because it has no such restriction.
+
+Note the SSH alias points at a **LAN IP**, so the push only works on the home network.
 
 The `mac__` / `vps__` prefix on each project directory is what lets the machine filter dropdown in the UI scope results to a single machine.
 
@@ -45,13 +49,14 @@ bash ~/token-dashboard/deploy/mac/install-mac.sh
 ```
 
 This sets up:
-- `~/bin/mac-push.sh` (rsync pushes Mac sessions to VPS with `mac__` prefix)
-- A launchd agent that runs the push hourly and at login
+- A `claude-push` fish function that runs `deploy/mac/mac-push.sh` from the repo
+- Nothing else — no daemon, no timer
 
 **Prerequisites for the Mac step:**
-- SSH alias `vps` must exist in `~/.ssh/config` pointing at the VPS
-- Key-based auth must already work: `ssh vps 'ls'` succeeds without a password
+- SSH alias `VGUbuntu` must exist in `~/.ssh/config` pointing at the VPS
+- Key-based auth must already work: `ssh VGUbuntu 'ls'` succeeds without a password
 - VPS install must be done first so `~/claude-sessions/` exists there
+- You must be on the home LAN
 
 ## Files
 
@@ -62,9 +67,8 @@ This sets up:
 | `systemd/claude-sync.service` | VPS | Calls `sync-vps-local.sh` as a system service |
 | `systemd/claude-sync.timer` | VPS | Hourly timer for the VPS sync |
 | `systemd/token-dashboard.service` | VPS | Runs the dashboard, bound to LAN IP |
-| `mac/mac-push.sh` | Mac | rsync pushes Mac sessions to VPS `mac__` prefix |
-| `mac/com.vgx.claude-push.plist` | Mac | launchd agent (hourly push) |
-| `mac/install-mac.sh` | Mac | One-shot Mac installer |
+| `mac/mac-push.sh` | Mac | rsync pushes Mac sessions to VPS `mac__` prefix — run on demand |
+| `mac/install-mac.sh` | Mac | One-shot Mac installer (verifies SSH, installs `claude-push`) |
 
 ## Useful commands
 
@@ -82,11 +86,8 @@ sudo systemctl start claude-sync.service
 git -C ~/token-dashboard pull --ff-only
 sudo systemctl restart token-dashboard
 
-# Mac — check push log
-tail -f ~/Library/Logs/claude-push.log
-
-# Mac — force a push now
-~/bin/mac-push.sh
+# Mac — push sessions to the VPS (must be on the home LAN)
+claude-push
 ```
 
 ## Security note
