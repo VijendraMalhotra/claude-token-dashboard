@@ -1,6 +1,6 @@
 # Token Dashboard
 
-**Version 1.5.2**
+**Version 1.5.3**
 
 A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
 
@@ -13,6 +13,10 @@ Supports **multi-machine aggregation** — aggregate sessions from a Mac and a V
 ![Overview tab — per-project, per-model, top tools, recent sessions](docs/images/dashboard-overview-bottom.jpg)
 
 ## Changelog
+
+### v1.5.3 (2026-08-28)
+- `push-claude-stats` now shows what it is doing: per-project file counts during the rsync, per-step timings, what the rescan actually ingested, and the tracked session/turn totals
+- Corrected the docs: the dashboard rescans itself every 30s (`server._scan_loop`), so a push alone is never lost — the explicit scan makes it visible immediately rather than within half a minute
 
 ### v1.5.2 (2026-08-28)
 - Renamed the Mac command `claude-push` → **`push-claude-stats`** (`deploy/mac/push-claude-stats.fish`). Fish autoloads by filename, so the file and the function name have to match; `install-mac.sh` removes the old file on upgrade
@@ -181,8 +185,10 @@ scan OK
   http://192.168.1.67:8080/#/overview
 ```
 
-**Pushing without scanning shows stale numbers** — the files land on disk but nothing reads them into
-SQLite. `push-claude-stats` does both; `bash deploy/mac/mac-push.sh` only does the first.
+`bash deploy/mac/mac-push.sh` does the rsync only. The dashboard rescans itself every 30 seconds
+anyway, so a bare push is never *lost* — the explicit scan just makes it show up now instead of
+within half a minute, and the summary saves you opening a browser to check. A rescan reporting
+"already current" means the background loop got there first, which is normal.
 
 ### First-time install
 

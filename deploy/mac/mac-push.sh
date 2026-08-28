@@ -36,10 +36,19 @@ while IFS= read -r slug; do
     [[ -n "$slug" ]] && slugs+=("$slug")
 done < <(ls "$MAC_PROJECTS" 2>/dev/null || true)
 
+# --out-format prints one line per transferred item; count the files (not the
+# directory entries, which end in /) so the caller can see what actually moved.
+total_files=0
 for slug in "${slugs[@]:-}"; do
-    rsync -a --delete \
-          "$MAC_PROJECTS/$slug/" \
-          "$VPS_SSH:$VPS_AGG/mac__${slug}/"
+    n=$(rsync -a --delete --out-format='%n' \
+              "$MAC_PROJECTS/$slug/" \
+              "$VPS_SSH:$VPS_AGG/mac__${slug}/" | grep -cv '/$' || true)
+    if [[ "$n" -gt 0 ]]; then
+        short="$slug"
+        [[ ${#short} -gt 46 ]] && short="...${short: -43}"
+        printf '    %-46s %4d file(s)\n' "$short" "$n"
+        total_files=$((total_files + n))
+    fi
 done
 
 # Remove stale mac__ dirs on VPS for projects deleted on Mac.
@@ -58,4 +67,4 @@ while IFS= read -r d; do
     fi
 done < <(ssh "$VPS_SSH" "cd ${VPS_AGG} 2>/dev/null && ls -1d mac__*/ 2>/dev/null || true")
 
-log "push OK (${#slugs[@]} projects → $VPS_SSH:$VPS_AGG)"
+log "push OK — ${#slugs[@]} projects, ${total_files} file(s) changed → $VPS_SSH:$VPS_AGG"

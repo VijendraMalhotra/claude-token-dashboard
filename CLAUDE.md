@@ -92,10 +92,16 @@ In JS, `web/app.js` exports two fetch helpers:
 The user-facing command is `push-claude-stats` (`deploy/mac/push-claude-stats.fish`, installed into
 `~/.config/fish/functions/` by `install-mac.sh` with `@SCRIPT_DIR@` substituted). It does three
 things and all three matter: rsync via `mac-push.sh`, then `GET /api/scan`, then print the summary
-band. **Pushing without scanning leaves the dashboard stale** — the JSONL lands on disk but nothing
-reads it into SQLite, so never suggest `mac-push.sh` alone as the way to refresh the dashboard. The
-dashboard URL is derived from `ssh -G <alias>` so there is no second place to update when the VPS
-moves; `TOKEN_DASHBOARD_URL` overrides it.
+band. The dashboard URL is derived from `ssh -G <alias>` so there is no second place to update when
+the VPS moves; `TOKEN_DASHBOARD_URL` overrides it.
+
+The explicit scan makes the push visible **immediately**; it is not what makes it arrive at all.
+`server._scan_loop` already rescans every 30s in a background thread, so `/api/scan` normally returns
+`{"messages": 0, "tools": 0, "files": 0}` — the loop got there first. A zero count is the normal case,
+not a failure, and the command says "already current" rather than treating it as an error. For the
+same reason, do **not** compare `/api/overview` before and after the scan to work out what was
+ingested: that races the background thread and reports nothing on a run that really did import data.
+The scan response is the authoritative record of what that call did.
 
 It is **deliberately not scheduled**, and a launchd agent for it was removed on 2026-08-28 after it failed 1076 consecutive times over 59 days without ever succeeding once.
 
