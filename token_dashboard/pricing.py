@@ -12,10 +12,17 @@ def load_pricing(path: Union[str, Path]) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+# Ordered most-specific first. "fable"/"mythos" must be checked before the
+# others: a new frontier model that matches no tier is priced at $0 and
+# silently disappears from every cost figure.
+_TIERS = (("fable", "fable"), ("mythos", "fable"),
+          ("opus", "opus"), ("sonnet", "sonnet"), ("haiku", "haiku"))
+
+
 def _tier_from_name(model: str) -> Optional[str]:
     m = (model or "").lower()
-    for tier in ("opus", "sonnet", "haiku"):
-        if tier in m:
+    for needle, tier in _TIERS:
+        if needle in m:
             return tier
     return None
 

@@ -10,7 +10,7 @@ import re
 import statistics
 from typing import Optional
 
-from .db import prompt_spans
+from .db import prompt_spans, opus_fallback_events
 from .pricing import cost_for
 
 # Correction markers. A prompt matching one of these is usually the user telling
@@ -30,6 +30,19 @@ _RIGHTSIZE_TURNS = 2
 _RIGHTSIZE_TOOLS = 1
 
 
+def _est_note(est_cost, total):
+    """Say so when the figure leans on tier-fallback rates rather than exact ones.
+
+    A model missing from pricing.json is priced by name match against its tier,
+    so a rate change or a new tier silently skews every cost on the dashboard.
+    """
+    if not total or est_cost <= 0:
+        return ""
+    share = 100.0 * est_cost / total
+    return (" %.0f%% of this is estimated from tier-fallback rates — add the exact "
+            "models to pricing.json to firm it up." % share)
+
+
 def _card(key, label, value, verdict, detail):
     return {"key": key, "label": label, "value": value,
             "verdict": verdict, "detail": detail}
@@ -42,9 +55,15 @@ def exec_summary(db_path, pricing, plan="api", machine=None,
         return [_card("empty", "No prompts", "—", "info",
                       "Nothing in range. Run a scan or widen the date range.")]
 
+    est_cost = 0.0
     for r in rows:
-        r["cost"] = sum((cost_for(u["model"], u, pricing)["usd"] or 0)
-                        for u in r["usage_by_model"])
+        r["cost"] = 0.0
+        for u in r["usage_by_model"]:
+            c = cost_for(u["model"], u, pricing)
+            usd = c["usd"] or 0
+            r["cost"] += usd
+            if c["estimated"] or c["usd"] is None:
+                est_cost += usd
 
     total = sum(r["cost"] for r in rows)
     monthly = pricing["plans"].get(plan, {}).get("monthly", 0)
@@ -61,13 +80,14 @@ def exec_summary(db_path, pricing, plan="api", machine=None,
             "value", "Value vs plan", "%.0f×" % mult,
             "good" if mult >= 3 else "info",
             "$%s of API-equivalent usage over %d active days on a $%d/mo plan. "
-            "You are not billed this — it is what the same work would have cost on the API."
-            % ("{:,.0f}".format(total), days, monthly)))
+            "You are not billed this — it is what the same work would have cost on the API.%s"
+            % ("{:,.0f}".format(total), days, monthly, _est_note(est_cost, total))))
     else:
         cards.append(_card(
             "spend", "API-equivalent spend", "$%s" % "{:,.0f}".format(total), "info",
             "Across %d prompts. Set your plan in Settings if you are on a subscription — "
-            "this figure is pay-per-token pricing." % len(rows)))
+            "this figure is pay-per-token pricing.%s"
+            % (len(rows), _est_note(est_cost, total))))
 
     # ── 2. prompt health ──────────────────────────────────────────────────────
     med_turns = statistics.median(r["turns"] for r in rows)
@@ -111,15 +131,30 @@ def exec_summary(db_path, pricing, plan="api", machine=None,
                 sonnet_cost += cost_for(cheap["model"], cheap, pricing)["usd"] or 0
         share = 100.0 * len(small) / len(opus)
         if subscription:
-            detail = ("%d Opus prompts finished in ≤%d turns with ≤%d tool call — questions, not "
-                      "engineering. On a subscription this is not money, it is quota: they consume "
-                      "the Opus limits you need for real work." % (len(small), _RIGHTSIZE_TURNS, _RIGHTSIZE_TOOLS))
+            # On a subscription these cost quota, not money — so the verdict is
+            # driven by whether the quota ceiling was ever actually reached, not
+            # by the raw count. Flagging small Opus asks on someone who never
+            # hits the limit is a false alarm.
+            hits = opus_fallback_events(db_path, machine=machine, since=since, until=until)
+            if hits == 0:
+                verdict = "good"
+                detail = ("%d Opus prompts finished in ≤%d turns with ≤%d tool call — questions "
+                          "rather than engineering. No Opus ceiling was hit in this range, so they "
+                          "cost you nothing but a little latency. Nothing to change."
+                          % (len(small), _RIGHTSIZE_TURNS, _RIGHTSIZE_TOOLS))
+            else:
+                verdict = "act" if share >= 25 else "watch"
+                detail = ("Hit the Opus ceiling %d time%s in this range. %d Opus prompts finished "
+                          "in ≤%d turns with ≤%d tool call — moving those to Sonnet buys back the "
+                          "quota you ran out of."
+                          % (hits, "" if hits == 1 else "s", len(small),
+                             _RIGHTSIZE_TURNS, _RIGHTSIZE_TOOLS))
         else:
+            verdict = "act" if share >= 25 else ("watch" if share >= 10 else "good")
             detail = ("%d Opus prompts finished in ≤%d turns with ≤%d tool call. "
                       "Same work on Sonnet: $%.0f instead of $%.0f."
                       % (len(small), _RIGHTSIZE_TURNS, _RIGHTSIZE_TOOLS, sonnet_cost, opus_cost))
-        cards.append(_card(
-            "rightsize", "Opus on small asks", "%d" % len(small),
-            "act" if share >= 25 else ("watch" if share >= 10 else "good"), detail))
+        cards.append(_card("rightsize", "Opus on small asks", "%d" % len(small),
+                           verdict, detail))
 
     return cards

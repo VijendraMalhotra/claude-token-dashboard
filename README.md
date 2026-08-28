@@ -1,6 +1,6 @@
 # Token Dashboard
 
-**Version 1.4.0**
+**Version 1.5.0**
 
 A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
 
@@ -13,6 +13,12 @@ Supports **multi-machine aggregation** — aggregate sessions from a Mac and a V
 ![Overview tab — per-project, per-model, top tools, recent sessions](docs/images/dashboard-overview-bottom.jpg)
 
 ## Changelog
+
+### v1.5.0 (2026-08-28)
+- **Corrected pricing.** `pricing.json` carried the retired $15/$75 Opus rates; current Opus (4.5–5) is $5/$25, so every Opus cost was ~3× too high. Added Opus 5/4.8, Sonnet 5, Fable 5, Mythos 5 and the remaining current models with exact cache-write and cache-read rates
+- `claude-fable-5` matched no pricing tier and was silently costed at $0 — `_tier_from_name` now recognises the Fable/Mythos tier
+- Exec summary discloses what share of a cost figure comes from tier-fallback rates instead of exact ones
+- Opus right-sizing verdict now keys off whether the Opus ceiling was actually hit (one-way main-thread Opus→Sonnet fallbacks, ignoring subagents) rather than the raw count of small Opus prompts — no ceiling hits means no alarm
 
 ### v1.4.0 (2026-08-28)
 - **Exec summary** at the top of the Overview tab: five colour-coded verdict cards (value, prompt health, cache discipline, rework rate, Opus right-sizing) that say whether each is fine, worth watching, or worth acting on

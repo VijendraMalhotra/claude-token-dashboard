@@ -161,8 +161,13 @@ not "what are the numbers"; the tabs below already carry the data.
 - **rework** — share of prompts matching `REWORK_RE`. A keyword heuristic ("no" also matches
   "no worries"), so it is deliberately reported as a rate to watch, never an exact count. Do not
   tighten the thresholds without re-checking against real data.
-- **rightsize** — Opus spans that finished in ≤2 turns with ≤1 tool call. The wording switches: on a
-  subscription these cost *quota*, not money, so the dollar comparison is suppressed.
+- **rightsize** — Opus spans that finished in ≤2 turns with ≤1 tool call. On `api` it quotes the
+  Sonnet dollar difference. On a subscription the money framing is meaningless, so the verdict is
+  driven by `db.opus_fallback_events()` — one-way main-thread Opus→Sonnet transitions, which is what
+  hitting the Opus ceiling actually looks like. Zero ceiling hits → `good`, however many small Opus
+  asks there are. Flagging them on someone who never reaches the limit is a false alarm.
+  `opus_fallback_events` **must** filter `is_sidechain = 0`: subagents routinely run Sonnet under an
+  Opus main thread, so counting every model change reports constant phantom "fallbacks".
 
 ## Tips engine
 
@@ -186,7 +191,20 @@ Tips are dismissable for 14 days (`dismissed_tips` table). `all_tips` calls all 
 
 ## Customizing
 
-Env vars: `PORT` (default 8080), `HOST` (default 127.0.0.1), `CLAUDE_PROJECTS_DIR`, `TOKEN_DASHBOARD_DB`. Pricing rates live in `pricing.json` — edit directly when model prices change.
+Env vars: `PORT` (default 8080), `HOST` (default 127.0.0.1), `CLAUDE_PROJECTS_DIR`, `TOKEN_DASHBOARD_DB`.
+
+### Pricing
+
+Rates live in `pricing.json`, per 1M tokens, sourced from
+`platform.claude.com/docs/en/about-claude/pricing`. Cache columns are fixed multiples of base input:
+5m write 1.25×, 1h write 2×, cache read 0.1× — `tests/test_pricing.py` asserts that.
+
+**Keep it current, and never guess a rate.** A model missing from `models` is priced by
+`_tier_from_name`, which name-matches `fable`/`mythos`/`opus`/`sonnet`/`haiku`; a model matching no
+tier is priced at **$0** and disappears from every figure. Both failure modes were live: the file
+carried the retired $15/$75 Opus rates while current Opus is $5/$25 (every Opus cost ~3× too high),
+and `claude-fable-5` matched no tier so its turns cost nothing. `summary._est_note` now discloses the
+tier-fallback share on the money card so a guessed figure cannot pass as measured.
 
 ## Known limitations
 

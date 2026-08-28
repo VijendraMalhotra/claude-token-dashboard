@@ -78,10 +78,26 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(card["value"], "0")
         self.assertEqual(card["verdict"], "good")
 
-    def test_subscription_wording_talks_about_quota_not_dollars(self):
-        card = self._by_key(self._db(_rows(3, "claude-opus-4-7", 1)), "max-20x")["rightsize"]
-        self.assertIn("quota", card["detail"])
+    def test_subscription_card_is_good_when_no_ceiling_was_hit(self):
+        # Small Opus asks are only a problem if the quota ceiling is actually
+        # reached. No fallback events -> no alarm.
+        card = self._by_key(self._db(_rows(3, "claude-opus-5", 1)), "max-20x")["rightsize"]
+        self.assertEqual(card["verdict"], "good")
+        self.assertIn("No Opus ceiling was hit", card["detail"])
         self.assertNotIn("instead of", card["detail"])
+
+    def test_api_plan_card_still_quotes_dollars(self):
+        card = self._by_key(self._db(_rows(4, "claude-opus-5", 1)), "api")["rightsize"]
+        self.assertIn("instead of", card["detail"])
+
+    def test_estimated_share_is_disclosed(self):
+        # claude-opus-9 is not in pricing.json -> priced by tier fallback
+        card = self._by_key(self._db(_rows(3, "claude-opus-9", 1)))["spend"]
+        self.assertIn("estimated from tier-fallback", card["detail"])
+
+    def test_exact_pricing_adds_no_disclaimer(self):
+        card = self._by_key(self._db(_rows(3, "claude-opus-5", 1)))["spend"]
+        self.assertNotIn("tier-fallback", card["detail"])
 
 
 class ReworkRegexTests(unittest.TestCase):
@@ -98,3 +114,42 @@ class ReworkRegexTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CeilingDetectionTests(unittest.TestCase):
+    """opus_fallback_events: one-way main-thread Opus -> Sonnet only."""
+
+    def _db(self, seq, sidechain=0):
+        import tempfile as _t
+        from token_dashboard.db import init_db as _i, connect as _c
+        db = os.path.join(_t.mkdtemp(), "f.db")
+        _i(db)
+        vals = ",".join(
+            "('m%d',NULL,'s1','projA','assistant','2026-04-01T00:00:%02dZ','%s',%d,0,0,0,0,0,NULL,NULL)"
+            % (i, i, m, sidechain) for i, m in enumerate(seq))
+        with _c(db) as c:
+            c.execute("INSERT INTO messages (uuid,parent_uuid,session_id,project_slug,type,"
+                      "timestamp,model,is_sidechain,input_tokens,output_tokens,cache_read_tokens,"
+                      "cache_create_5m_tokens,cache_create_1h_tokens,prompt_text,prompt_chars) "
+                      "VALUES " + vals)
+            c.commit()
+        return db
+
+    def test_one_way_downgrade_counts(self):
+        from token_dashboard.db import opus_fallback_events
+        db = self._db(["claude-opus-5", "claude-opus-5", "claude-sonnet-5", "claude-sonnet-5"])
+        self.assertEqual(opus_fallback_events(db), 1)
+
+    def test_returning_to_opus_is_not_a_ceiling(self):
+        from token_dashboard.db import opus_fallback_events
+        db = self._db(["claude-opus-5", "claude-sonnet-5", "claude-opus-5"])
+        self.assertEqual(opus_fallback_events(db), 0)
+
+    def test_sidechain_switches_are_ignored(self):
+        from token_dashboard.db import opus_fallback_events
+        db = self._db(["claude-opus-5", "claude-sonnet-5", "claude-sonnet-5"], sidechain=1)
+        self.assertEqual(opus_fallback_events(db), 0)
+
+    def test_all_opus_has_no_events(self):
+        from token_dashboard.db import opus_fallback_events
+        self.assertEqual(opus_fallback_events(self._db(["claude-opus-5"] * 4)), 0)

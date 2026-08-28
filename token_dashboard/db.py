@@ -341,6 +341,47 @@ def prompt_spans(db_path, machine=None, since=None, until=None) -> list:
     return sorted(out.values(), key=lambda r: r["timestamp"], reverse=True)
 
 
+def opus_fallback_events(db_path, machine=None, since=None, until=None) -> int:
+    """Count times the main thread fell from Opus to Sonnet and never went back.
+
+    This is what actually hitting the Opus usage ceiling looks like: Claude Code
+    degrades to Sonnet for the rest of the window. It is one-way — a session
+    that returns to Opus was a deliberate switch, not a limit.
+
+    `is_sidechain = 0` is essential. Subagents routinely run Sonnet under an
+    Opus main thread, so counting every model change reports constant
+    "fallbacks" that are really just normal subagent dispatch.
+    """
+    mach, margs = _machine_clause(machine)
+    rng, rargs = _range_clause(since, until)
+    sql = f"""
+      SELECT session_id, model FROM messages
+       WHERE type='assistant' AND model IS NOT NULL AND is_sidechain = 0
+             {mach} {rng}
+       ORDER BY session_id, timestamp, uuid
+    """
+    def tier(m):
+        m = (m or "").lower()
+        for t in ("opus", "sonnet", "haiku"):
+            if t in m:
+                return t
+        return "other"
+
+    by_session = {}
+    with connect(db_path) as c:
+        for r in c.execute(sql, margs + rargs):
+            by_session.setdefault(r["session_id"], []).append(tier(r["model"]))
+
+    events = 0
+    for seq in by_session.values():
+        for i in range(1, len(seq)):
+            if seq[i - 1] == "opus" and seq[i] == "sonnet" \
+                    and "opus" not in seq[i:]:
+                events += 1
+                break          # one ceiling event per session is enough
+    return events
+
+
 def project_summary(db_path, since=None, until=None, machine=None) -> list:
     rng, args = _range_clause(since, until)
     mach, margs = _machine_clause(machine)
