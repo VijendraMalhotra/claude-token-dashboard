@@ -1,6 +1,6 @@
 # Token Dashboard
 
-**Version 1.5.3**
+**Version 1.5.4**
 
 A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
 
@@ -13,6 +13,10 @@ Supports **multi-machine aggregation** — aggregate sessions from a Mac and a V
 ![Overview tab — per-project, per-model, top tools, recent sessions](docs/images/dashboard-overview-bottom.jpg)
 
 ## Changelog
+
+### v1.5.4 (2026-08-28)
+- `push-claude-stats` closing line now carries the hard numbers too — total tokens and API-equivalent cost alongside sessions and user-message count (the summary band above it is verdicts, not data)
+- The **Opus on small asks** card reads `900 prompts` rather than a bare `900`, so the number is legible without the hover detail
 
 ### v1.5.3 (2026-08-28)
 - `push-claude-stats` now shows what it is doing: per-project file counts during the rsync, per-step timings, what the rescan actually ingested, and the tracked session/turn totals

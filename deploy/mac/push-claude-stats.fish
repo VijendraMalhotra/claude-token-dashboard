@@ -101,7 +101,10 @@ try:
     d = json.load(sys.stdin)
 except Exception:
     raise SystemExit
-print("      {:,} sessions - {:,} turns tracked".format(d.get("sessions", 0), d.get("turns", 0)))
+tok = sum(d.get(k, 0) for k in ("input_tokens", "output_tokens", "cache_read_tokens",
+                                "cache_create_5m_tokens", "cache_create_1h_tokens"))
+print("      {:,} sessions - {:,} user messages - {:,} tokens - ${:,.0f} API-equivalent".format(
+    d.get("sessions", 0), d.get("turns", 0), tok, d.get("cost_usd", 0)))
 '
     printf '\n'
     __pcs_col blue; printf '%s/#/overview' $url; __pcs_col normal

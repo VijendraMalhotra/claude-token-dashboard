@@ -154,7 +154,7 @@ def exec_summary(db_path, pricing, plan="api", machine=None,
             detail = ("%d Opus prompts finished in ≤%d turns with ≤%d tool call. "
                       "Same work on Sonnet: $%.0f instead of $%.0f."
                       % (len(small), _RIGHTSIZE_TURNS, _RIGHTSIZE_TOOLS, sonnet_cost, opus_cost))
-        cards.append(_card("rightsize", "Opus on small asks", "%d" % len(small),
+        cards.append(_card("rightsize", "Opus on small asks", "%d prompts" % len(small),
                            verdict, detail))
 
     return cards

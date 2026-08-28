@@ -70,12 +70,12 @@ class SummaryTests(unittest.TestCase):
 
     def test_rightsize_flags_small_opus_spans(self):
         card = self._by_key(self._db(_rows(4, "claude-opus-4-7", 1)))["rightsize"]
-        self.assertEqual(card["value"], "4")
+        self.assertEqual(card["value"], "4 prompts")
         self.assertEqual(card["verdict"], "act")
 
     def test_big_opus_spans_are_not_flagged_as_small(self):
         card = self._by_key(self._db(_rows(4, "claude-opus-4-7", 9)))["rightsize"]
-        self.assertEqual(card["value"], "0")
+        self.assertEqual(card["value"], "0 prompts")
         self.assertEqual(card["verdict"], "good")
 
     def test_subscription_card_is_good_when_no_ceiling_was_hit(self):
